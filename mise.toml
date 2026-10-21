@@ -1,0 +1,26 @@
+[tools]
+uv = "0.11.16"
+pre-commit = "4.6.2"
+
+[env]
+UV_PYTHON = "3.12"
+
+[tasks.setup]
+description = "Create the development environment and install Git hooks"
+run = ["uv sync --locked --dev", "pre-commit install"]
+
+[tasks.check]
+description = "Run commit checks on all tracked files"
+run = "pre-commit run --all-files"
+
+[tasks.test]
+description = "Run the test suite"
+run = "uv run --locked pytest"
+
+[tasks.build]
+description = "Build the wheel and source distribution"
+run = "uv build"
+
+[tasks.verify]
+description = "Run commit checks, tests, and distribution builds"
+run = [{ task = "check" }, "pre-commit run --hook-stage manual --all-files"]

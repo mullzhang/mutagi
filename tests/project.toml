@@ -1,0 +1,15 @@
+name = "naedo-forest"
+preparation = [["PYTHON", "-c", "pass"], ["PYTHON", "-c", "pass"], ["PYTHON", "-c", "pass"]]
+references = ["AGENTS.md", "docs/operations.md"]
+experiments = "experiments"
+catalog = "experiments/INDEX.md"
+exploration_paths = ["naedo/", "knowledge/notes/", "demos/{id}/", ".apm/instructions/naedo.instructions.md"]
+integration_paths = ["knowledge/README.md", "knowledge/notes/", "experiments/INDEX.md"]
+
+[prompts]
+explore = ".mutagi/prompts/explore.md"
+inherit = ".mutagi/prompts/inherit.md"
+integrate = ".mutagi/prompts/integrate.md"
+
+[generated_hashes]
+"apm.lock.yaml" = [".claude/rules/naedo.md"]
