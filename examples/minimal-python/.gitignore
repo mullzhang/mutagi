@@ -1,0 +1,4 @@
+__pycache__/
+*.py[cod]
+/.mutagi/runs/
+/.mutagi/worktrees/

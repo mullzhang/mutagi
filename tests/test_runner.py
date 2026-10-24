@@ -35,6 +35,7 @@ def repo(tmp_path, monkeypatch):
         "docs/operations.md",
         ".mutagi/prompts/explore.md",
         ".mutagi/prompts/inherit.md",
+        ".mutagi/prompts/integrate.md",
         "experiments/INDEX.md",
         "knowledge/notes/seed.md",
     ):
@@ -95,7 +96,7 @@ def create(repo, tmp_path, **kw):
         path = runner.create(
             repo,
             "HEAD",
-            task,
+            task.read_text(),
             "gpt-6-astra",
             "medium",
             kw.pop("seconds", 30),

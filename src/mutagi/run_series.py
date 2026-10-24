@@ -23,12 +23,16 @@ from mutagi.run_experiment import (
     validate_id,
 )
 from mutagi.run_round import (
+    TERMINAL as ROUND_TERMINAL,
     Round,
     create_round,
     require_catalog_entry,
     validate_plan as validate_round_plan,
 )
 from mutagi.project import load_project
+from mutagi.inputs import add_plan_arguments, read_plan
+from mutagi.repository import require_ready
+from mutagi.status import add_status_arguments, show_execution
 from mutagi.series_policy import validate_adaptation, validate_proposal
 
 TERMINAL = (
@@ -111,21 +115,16 @@ def validate_plan(plan):
 def create_series(repo, plan):
     validate_plan(plan)
     require_series_owner(repo)
-    require_clean(repo)
+    shared_branch, base, _ = require_ready(repo, plan["base"])
     for path in (repo / ".mutagi/runs" / "rounds").glob("*/state.json"):
-        if json.loads(path.read_text())["phase"] not in (
-            "completed",
-            "budget_exhausted",
-            "usage_exhausted",
-            "usage_unknown",
-        ):
+        if json.loads(path.read_text())["phase"] not in ROUND_TERMINAL:
             raise RuntimeError("finish the unfinished round before starting a series")
 
     for path in (repo / ".mutagi/runs").glob("*/state.json"):
         if json.loads(path.read_text())["phase"] != "registered":
             raise RuntimeError("finish the unfinished run before starting a series")
 
-    plan = dict(plan, base=git(repo, "rev-parse", plan["base"] + "^{commit}"))
+    plan = dict(plan, base=base)
     identifier = str(uuid4())
     directory = repo / ".mutagi/runs" / "series" / identifier
     directory.mkdir(parents=True)
@@ -136,7 +135,7 @@ def create_series(repo, plan):
             "id": identifier,
             "repo": str(repo),
             "plan": plan,
-            "shared_branch": git(repo, "symbolic-ref", "--short", "HEAD"),
+            "shared_branch": shared_branch,
             "initial_head": git(repo, "rev-parse", "HEAD"),
             "started_at": utc(started),
             "deadline": started + plan["seconds"],
@@ -401,14 +400,19 @@ def main():
     parser = argparse.ArgumentParser(prog="mutagi series", description=__doc__)
     parser.add_argument("--repo", type=Path, default=Path.cwd())
     commands = parser.add_subparsers(dest="command", required=True)
-    commands.add_parser("start").add_argument("--plan", type=Path, required=True)
-    for name in ("resume", "status"):
-        commands.add_parser(name).add_argument("id", type=validate_id)
+    add_plan_arguments(commands.add_parser("start"), series=True)
+    commands.add_parser("resume").add_argument("id", type=validate_id)
+    add_status_arguments(commands.add_parser("status"), validate_id)
 
     args = parser.parse_args()
     repo = Path(git(args.repo, "rev-parse", "--show-toplevel")).resolve()
+    if args.command == "start":
+        plan = read_plan(args, validate_plan, repo=repo)
+        if args.dry_run:
+            print(json.dumps(plan, ensure_ascii=False, indent=2))
+            return
     if args.command == "status":
-        print((repo / ".mutagi/runs" / "series" / args.id / "state.json").read_text())
+        show_execution(repo, "series", args.id, raw=args.json)
         return
 
     def interrupted(*_):
@@ -417,7 +421,7 @@ def main():
     signal.signal(signal.SIGTERM, interrupted)
     with lock(repo):
         directory = (
-            create_series(repo, json.loads(args.plan.read_text()))
+            create_series(repo, plan)
             if args.command == "start"
             else repo / ".mutagi/runs" / "series" / args.id
         )

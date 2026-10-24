@@ -16,7 +16,9 @@ import sys
 import time
 
 from mutagi.run_experiment import atomic_json, git, lock, utc, validate_id
-from mutagi.run_series import Series, TERMINAL, create_series
+from mutagi.run_series import Series, TERMINAL, create_series, validate_plan
+from mutagi.inputs import add_plan_arguments, read_plan
+from mutagi.status import show_service
 
 
 class HostShutdown(BaseException):
@@ -195,8 +197,10 @@ def main():
     commands.add_parser("install")
     commands.add_parser("uninstall")
     commands.add_parser("tick")
-    commands.add_parser("status")
-    commands.add_parser("start").add_argument("--plan", type=Path, required=True)
+    commands.add_parser("status").add_argument(
+        "--json", action="store_true", help="Print the saved service state JSON"
+    )
+    add_plan_arguments(commands.add_parser("start"), series=True)
     commands.add_parser("manage").add_argument("id", type=validate_id)
     commands.add_parser("pause")
     args = parser.parse_args()
@@ -211,17 +215,13 @@ def main():
     elif args.command == "tick":
         tick(repo)
     elif args.command == "status":
-        print(
-            config_path(repo).read_text()
-            if config_path(repo).exists()
-            else '{"phase":"unassigned"}'
-        )
+        show_service(repo, raw=args.json)
     elif args.command == "pause":
         # Write the request atomically even while the controller holds the lock.
-        (repo / ".mutagi/runs/service.pause").write_text(
-            "operator requested a pause\n"
+        (repo / ".mutagi/runs/service.pause").write_text("operator requested a pause\n")
+        print(
+            "Pause requested. The active task will be preserved before any further work starts."
         )
-        print("Pause requested. The active task will be preserved before any further work starts.")
     elif args.command == "uninstall":
         label, path = installation(repo)
         subprocess.run(
@@ -229,11 +229,14 @@ def main():
         )
         path.unlink()
     else:
+        if args.command == "start":
+            plan = read_plan(args, validate_plan, repo=repo)
+            if args.dry_run:
+                print(json.dumps(plan, ensure_ascii=False, indent=2))
+                return
         with lock(repo):
             identifier = (
-                create_series(repo, json.loads(args.plan.read_text())).name
-                if args.command == "start"
-                else args.id
+                create_series(repo, plan).name if args.command == "start" else args.id
             )
             manage(repo, identifier)
             print(identifier)

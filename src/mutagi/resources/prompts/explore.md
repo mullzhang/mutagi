@@ -31,3 +31,7 @@ Record relevant checks, reproduction steps, negative results, and limitations. P
 Return the required JSON with title, summary, limits, status, the repository-relative record path,
 implementation_commit for the observed revision (an empty string if unobserved), and checks describing the checks performed.
 The final JSON does not require its own preservation commit ID. The controller fixes the final revision.
+
+Use the following bundled template for your experiment README.md, filling its metadata with the assigned execution values:
+
+{record_template}

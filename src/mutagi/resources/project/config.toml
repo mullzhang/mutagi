@@ -1,0 +1,14 @@
+name = {name}
+preparation = {preparation}
+references = {references}
+experiments = "experiments"
+catalog = "experiments/INDEX.md"
+exploration_paths = {exploration_paths}
+integration_paths = ["knowledge/README.md", "knowledge/notes/", "experiments/INDEX.md"]
+
+[prompts]
+explore = ".mutagi/prompts/explore.md"
+inherit = ".mutagi/prompts/inherit.md"
+integrate = ".mutagi/prompts/integrate.md"
+
+[generated_hashes]

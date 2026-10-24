@@ -1,0 +1,18 @@
+{
+  "base": "HEAD",
+  "effort": "medium",
+  "seconds": 2400,
+  "experiment_seconds": 900,
+  "integration_seconds": 600,
+  "reserve_seconds": 120,
+  "tasks": [
+    {
+      "prompt": "Compare whitespace-delimited item counting with one explicit alternative on punctuation, identifiers, or Japanese text. Record where the meanings differ without assuming the baseline is defective.",
+      "parent": null
+    },
+    {
+      "prompt": "Use the parent result to test one newly exposed boundary condition, keeping inherited and new evidence distinct.",
+      "parent": 0
+    }
+  ]
+}

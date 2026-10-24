@@ -20,3 +20,4 @@ jobs:
           version: "2026.8.4"
       - run: mise run setup
       - run: mise run verify
+      - run: uv run --locked python scripts/verify_distribution.py

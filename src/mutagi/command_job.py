@@ -15,6 +15,7 @@ import time
 from uuid import uuid4
 
 from mutagi.runner_process import identity, processes, recover_process, run_job
+from mutagi.status import show_job
 
 
 def read_state(directory):
@@ -167,10 +168,20 @@ def main():
     launch.add_argument("--seconds", required=True, type=float)
     launch.add_argument("--command", nargs=argparse.REMAINDER, required=True)
     for action in ("status", "stop", "recover", "_supervise"):
-        subs.add_parser(action).add_argument("directory", type=Path)
+        command = subs.add_parser(action)
+        command.add_argument("directory", type=Path)
+        if action == "status":
+            command.add_argument(
+                "--json",
+                action="store_true",
+                help="Print the saved state JSON without process observations",
+            )
 
     args = parser.parse_args()
     directory = args.directory.resolve()
+    if args.action == "status" and args.json:
+        print((directory / "state.json").read_text(), end="")
+        return
     if args.action == "_supervise":
         supervise(directory)
         return
@@ -192,7 +203,10 @@ def main():
             and live[monitor["pid"]]["identity"] == monitor["identity"]
         )
 
-    print(json.dumps(state, indent=2))
+    if args.action == "status":
+        show_job(directory, state)
+    else:
+        print(json.dumps(state, indent=2))
 
 
 if __name__ == "__main__":

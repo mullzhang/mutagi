@@ -285,7 +285,7 @@ def test_pending_series_blocks_other_entrypoints(series_case, tmp_path):
         rounds.create_round(repo, series.round_plan(plan, plan["rounds"][0]["tasks"]))
 
     with pytest.raises(RuntimeError, match="unfinished series"):
-        runner.create(repo, "HEAD", task, "test", "medium", 60, 10)
+        runner.create(repo, "HEAD", task.read_text(), "test", "medium", 60, 10)
 
     # Then no session starts and only the original series retains ownership.
     assert not calls.exists()

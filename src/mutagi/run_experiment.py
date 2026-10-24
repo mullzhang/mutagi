@@ -21,8 +21,12 @@ import time
 from uuid import UUID, uuid4
 
 from mutagi.runner_process import recover_process, run_job
-from mutagi.prompts import render_prompt
-from mutagi.project import parse_project, matches
+from mutagi.prompts import record_template, render_prompt
+from mutagi.project import matches
+from mutagi.inputs import EFFORTS, read_text, resolve_settings, validate_task
+from mutagi.settings import EXECUTION_FIELDS
+from mutagi.status import add_status_arguments, show_execution
+from mutagi.repository import git, require_clean, require_ready
 
 SCHEMA = {
     "type": "object",
@@ -54,12 +58,6 @@ SCHEMA = {
     ],
     "additionalProperties": False,
 }
-
-
-def git(repo, *args) -> str:
-    return subprocess.check_output(
-        ["git", "-C", str(repo), *args], text=True, timeout=30
-    ).strip()
 
 
 def atomic_json(path: Path, value) -> None:
@@ -112,11 +110,6 @@ def service_pause_requested(repo, series_id):
     )
 
 
-def require_clean(repo):
-    if git(repo, "status", "--porcelain"):
-        raise RuntimeError(f"clean the working tree: {repo}")
-
-
 def require_series_owner(repo, series_id=None):
     for path in (repo / ".mutagi/runs" / "series").glob("*/state.json"):
         state = json.loads(path.read_text())
@@ -136,10 +129,39 @@ def require_series_owner(repo, series_id=None):
             )
 
 
+def validate_input(task_text, model, effort, seconds, reserve):
+    validate_task(task_text)
+    if not isinstance(model, str) or not model.strip() or effort not in EFFORTS:
+        raise ValueError("specify a nonempty model and a supported reasoning effort")
+    if not (
+        type(seconds) in (int, float)
+        and type(reserve) in (int, float)
+        and math.isfinite(seconds)
+        and math.isfinite(reserve)
+        and 0 < reserve < seconds
+    ):
+        raise ValueError(
+            "budget values must be finite and satisfy 0 < reserve < total seconds"
+        )
+
+
+def validate_parent(repo, base, parent_id, parent_record):
+    if bool(parent_id) != bool(parent_record):
+        raise ValueError("inheritance requires both --parent-id and --parent-record")
+
+    if parent_id:
+        validate_id(parent_id)
+        content = git(repo, "show", base + ":" + parent_record)
+        if not re.search(r"^id: " + re.escape(parent_id) + r"$", content, re.M):
+            raise ValueError(
+                "the parent record at the base commit does not match its ID"
+            )
+
+
 def create(
     repo: Path,
     base: str,
-    task: Path,
+    task_text: str,
     model: str,
     effort: str,
     seconds: float,
@@ -150,33 +172,11 @@ def create(
     started=None,
     series_id=None,
 ):
-    if not (
-        math.isfinite(seconds) and math.isfinite(reserve) and 0 < reserve < seconds
-    ):
-        raise ValueError(
-            "budget values must be finite and satisfy 0 < reserve < total seconds"
-        )
+    validate_input(task_text, model, effort, seconds, reserve)
 
     require_series_owner(repo, series_id)
-    require_clean(repo)
-    for private_path in (".mutagi/runs/probe", ".mutagi/worktrees/probe"):
-        if subprocess.run(
-            ["git", "-C", str(repo), "check-ignore", "-q", private_path]
-        ).returncode:
-            raise ValueError(
-                f"exclude the runner's private path from Git: {private_path}"
-            )
-
-    shared_branch = git(repo, "symbolic-ref", "--short", "HEAD")
-    base = git(repo, "rev-parse", "--verify", base + "^{commit}")
-    if bool(parent_id) != bool(parent_record):
-        raise ValueError("inheritance requires both --parent-id and --parent-record")
-
-    if parent_id:
-        validate_id(parent_id)
-        content = git(repo, "show", base + ":" + parent_record)
-        if not re.search(r"^id: " + re.escape(parent_id) + r"$", content, re.M):
-            raise ValueError("the parent record at the base commit does not match its ID")
+    shared_branch, base, project = require_ready(repo, base)
+    validate_parent(repo, base, parent_id, parent_record)
 
     for previous in (repo / ".mutagi/runs").glob("*/state.json"):
         if json.loads(previous.read_text())["phase"] != "registered":
@@ -184,8 +184,6 @@ def create(
                 f"finish the unfinished run before starting another: {previous.parent.name}"
             )
 
-    project = parse_project(git(repo, "show", base + ":.mutagi/config.toml"))
-    task_text = task.read_text()
     identifier = str(uuid4()) if identifier is None else validate_id(identifier)
     run = repo / ".mutagi/runs" / identifier
     if run.exists():
@@ -197,7 +195,7 @@ def create(
             or any(p.name not in expected for p in run.iterdir())
             or (
                 (run / "task.txt").exists()
-                and (run / "task.txt").read_text() != task_text
+                and read_text(run / "task.txt") != task_text
             )
         ):
             raise RuntimeError("the existing run is not an incomplete allocation")
@@ -219,6 +217,8 @@ def create(
         "deadline": started + seconds,
         "model": model,
         "effort": effort,
+        "seconds": seconds,
+        "reserve_seconds": reserve,
         "parent_ids": [parent_id] if parent_id else [],
         "parent_record": parent_record,
         "phase": "preparing",
@@ -324,11 +324,12 @@ class Runner:
             project_prompt=self.project["prompts"][mode],
             exploration_deadline=utc(s["exploration_deadline"]),
             deadline=utc(s["deadline"]),
-            task=(self.run / "task.txt").read_text(),
+            task=read_text(self.run / "task.txt"),
             exploration_paths=[
                 path.format(id=s["id"]) for path in self.project["exploration_paths"]
             ],
             folder_time=s["started_at"].replace(":", ""),
+            record_template=record_template(),
         )
 
     def execute(self):
@@ -918,28 +919,91 @@ def main():
     commands = parser.add_subparsers(dest="command", required=True)
     start = commands.add_parser("start")
     start.add_argument("--base", required=True)
-    start.add_argument("--task", type=Path, required=True)
-    start.add_argument("--model", required=True)
+    instruction = start.add_mutually_exclusive_group(required=True)
+    instruction.add_argument("--task", help="Instruction file, or - for standard input")
+    instruction.add_argument("--prompt", help="Instruction text for this exploration")
+    start.add_argument("--model", default=argparse.SUPPRESS)
     start.add_argument(
         "--effort",
-        required=True,
-        choices=["low", "medium", "high", "xhigh", "max", "ultra"],
+        default=argparse.SUPPRESS,
+        choices=EFFORTS,
     )
-    start.add_argument("--seconds", type=float, default=3600)
-    start.add_argument("--reserve-seconds", type=float, default=600)
+    start.add_argument(
+        "--seconds",
+        type=float,
+        default=argparse.SUPPRESS,
+        help="Total seconds (default: saved setting, otherwise 3600)",
+    )
+    start.add_argument(
+        "--reserve-seconds",
+        type=float,
+        default=argparse.SUPPRESS,
+        help="Preservation reserve (default: saved setting, otherwise 600)",
+    )
     start.add_argument("--parent-id")
     start.add_argument("--parent-record")
-    for name in ("resume", "status"):
-        commands.add_parser(name).add_argument("id", type=validate_id)
+    start.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print resolved inputs as JSON without creating or running anything",
+    )
+    commands.add_parser("resume").add_argument("id", type=validate_id)
+    add_status_arguments(commands.add_parser("status"), validate_id)
 
     args = parser.parse_args()
+    if args.command == "start":
+        task_text = validate_task(
+            args.prompt if args.prompt is not None else read_text(args.task)
+        )
     repo = Path(git(args.repo, "rev-parse", "--show-toplevel")).resolve()
     if os.name != "posix":
         parser.error("this runner requires POSIX process groups and flock")
 
     if args.command == "status":
-        print((repo / ".mutagi/runs" / args.id / "state.json").read_text())
+        show_execution(repo, "experiment", args.id, raw=args.json)
         return
+
+    if args.command == "start":
+        settings = {
+            "seconds": 3600,
+            "reserve_seconds": 600,
+            **resolve_settings(
+                repo,
+                args.base,
+                "experiment",
+                {
+                    field: vars(args)[field]
+                    for field in EXECUTION_FIELDS["experiment"]
+                    if field in vars(args)
+                },
+            ),
+        }
+        if not {"model", "effort"} <= settings.keys():
+            raise ValueError(
+                "provide --model and --effort or save explicit execution defaults at the base commit"
+            )
+        validate_input(
+            task_text,
+            settings["model"],
+            settings["effort"],
+            settings["seconds"],
+            settings["reserve_seconds"],
+        )
+        validate_parent(repo, settings["base"], args.parent_id, args.parent_record)
+        if args.dry_run:
+            print(
+                json.dumps(
+                    {
+                        **settings,
+                        "prompt": task_text,
+                        "parent_id": args.parent_id,
+                        "parent_record": args.parent_record,
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
+            return
 
     def interrupted(*_):
         raise KeyboardInterrupt("runner interrupted")
@@ -949,12 +1013,12 @@ def main():
         if args.command == "start":
             run = create(
                 repo,
-                args.base,
-                args.task,
-                args.model,
-                args.effort,
-                args.seconds,
-                args.reserve_seconds,
+                settings["base"],
+                task_text,
+                settings["model"],
+                settings["effort"],
+                settings["seconds"],
+                settings["reserve_seconds"],
                 args.parent_id,
                 args.parent_record,
             )
@@ -964,9 +1028,7 @@ def main():
         print(f"Run: {run.name}", flush=True)
         runner = Runner(run)
         if runner.state.get("series_id") is not None:
-            raise RuntimeError(
-                "use mutagi series resume for a run owned by a series"
-            )
+            raise RuntimeError("use mutagi series resume for a run owned by a series")
 
         try:
             result = runner.advance(recovery=args.command == "resume")

@@ -1,0 +1,1 @@
+Compare whitespace-delimited item counting with one explicit alternative on punctuation, identifiers, or Japanese text. Record where the meanings differ without assuming the baseline is defective.

@@ -1,0 +1,14 @@
+name = "minimal-python"
+preparation = [["python3", "-m", "unittest", "discover", "-s", "tests"]]
+references = ["README.md"]
+experiments = "experiments"
+catalog = "experiments/INDEX.md"
+exploration_paths = ["knowledge/notes/", "src/", "tests/"]
+integration_paths = ["knowledge/README.md", "knowledge/notes/", "experiments/INDEX.md"]
+
+[prompts]
+explore = ".mutagi/prompts/explore.md"
+inherit = ".mutagi/prompts/inherit.md"
+integrate = ".mutagi/prompts/integrate.md"
+
+[generated_hashes]

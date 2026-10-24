@@ -1,0 +1,39 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Verify and publish versioned distributions
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: jdx/mise-action@v5
+        with:
+          version: "2026.8.4"
+      - run: mise run setup
+      - name: Check the tag and package version
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: uv run --locked python scripts/check_release.py "$RELEASE_TAG"
+      - run: mise run verify
+      - name: Verify installed distributions and Git updates
+        run: uv run --locked python scripts/verify_distribution.py
+      - name: Publish the verified tag and distributions
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: gh release create "$RELEASE_TAG" dist/*.whl dist/*.tar.gz --verify-tag --generate-notes --title "mutagi $RELEASE_TAG"

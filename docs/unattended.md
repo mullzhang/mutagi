@@ -92,3 +92,12 @@ Already-started model work is not rerun; recovery and preservation continue inst
 If the OS boot identity changed, old PIDs are not signalled.
 Persistent preservation or repository errors limit service attempts to three in total, then stop with `needs_attention`.
 Execution still requires a powered-on host, a logged-in user, valid authentication, and an available environment.
+
+## Service inputs and status
+
+`mutagi service start` accepts the same plan files, standard-input plans, ordered task arguments, saved defaults, and explicit scalar overrides as `mutagi series start`.
+`service start --dry-run` prints the resolved series plan without registering service ownership or allocating state.
+Actual `service start` records a managed series; execution still depends on the installed service or an explicit service tick.
+
+`mutagi service status` displays the service checkpoint and the managed series' progress. A recorded service state does not establish that launchd is running.
+Add `--json` to get the original service checkpoint. See [status and recovery](status.md).

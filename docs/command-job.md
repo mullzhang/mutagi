@@ -29,10 +29,11 @@ The supervisor detaches from the launcher's standard streams and writes to `supe
 | `stop-requested` | Persistent explicit stop request; repeated calls do not cancel it |
 | `lock` | Lock preventing concurrent supervision and recovery of the same record |
 
-`status` returns saved state and checks whether the supervisor is currently alive.
+`status` displays the saved stage, command and log paths, recorded exit result, current process observations, and next action.
+Use `status --json` to read the original saved state without live process measurements; see [status output](status.md).
 Confirm completion with `stage=finished` and `process=null`; distinguish `result.exit_code`, `timed_out`, and `cancelled`.
 `finished` does not imply success: the exit code may be nonzero.
-`supervisor_alive=false` alone does not establish that the command has stopped.
+An absent supervisor alone does not establish that the command has stopped.
 
 ## Stop and recover
 

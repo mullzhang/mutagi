@@ -9,7 +9,8 @@ It does not operate App chats.
 ## Plan and start
 
 Use the same environment, authentication, and permissions as single-experiment execution.
-Save the plan as JSON in `.mutagi/plans/round-plan.json`, commit it, and leave the shared branch clean.
+Provide the plan as JSON from a file or standard input and leave the shared branch clean.
+For reuse, save it in `.mutagi/plans/round-plan.json` and commit it.
 This example runs one independent exploration and one inheriting its results.
 `parent` is the zero-based index of an earlier item in the same array, or `null` for independent exploration.
 
@@ -35,11 +36,47 @@ mutagi round status <round-UUID>
 mutagi round resume <same-round-UUID>
 ```
 
+The CLI accepts `--base`, `--model`, `--effort`, `--seconds`, `--experiment-seconds`, `--integration-seconds`, and `--reserve-seconds` as explicit plan overrides.
+Saved execution defaults from the selected base commit are applied first, followed by the input plan and explicitly supplied arguments. A file may omit fields supplied through those defaults or arguments; the complete plan must pass the same validation before a round is allocated.
+No model is chosen automatically. The input file is unchanged, and the resolved plan is saved in round state.
+The [sample round plan](../examples/minimal-python/.mutagi/plans/round.json) omits the model for this purpose.
+
+```bash
+mutagi round start --plan .mutagi/plans/round-plan.json --model "$MODEL"
+cat .mutagi/plans/round-plan.json |
+  mutagi round start --plan - --model "$MODEL"
+```
+
+`--plan -` reads JSON from standard input to EOF, so another program can generate a plan without an intermediate file.
+Use `--dry-run` to print the resolved plan as JSON without allocating or executing a round. The output is accepted by `--plan`; input files are unchanged. See [preview behavior](getting-started.md#preview-without-starting-work).
+
 At launch, the base is resolved to a full SHA and the plan and round deadline are fixed.
 Exploration and integration IDs are recorded in advance; each execution clock starts at its allocation.
 Each slot's limit is shortened to the round's remaining time. A slot does not start if even preservation time is unavailable.
 Preparation, preservation, registration, and knowledge integration count toward the round budget.
 Stop grace periods and Git checks mean the wall-clock finish time is not strictly guaranteed.
+
+## Construct tasks with CLI arguments
+
+A simple round needs no plan file:
+
+```bash
+mutagi round start --base HEAD \
+  --prompt "Compare two counting definitions on a finite input." \
+  --inherit 0 "Use the first result to test a newly identified boundary." \
+  --model "$MODEL" --effort medium \
+  --seconds 2400 --experiment-seconds 900 \
+  --integration-seconds 600 --reserve-seconds 120
+```
+
+`--prompt TEXT` adds an independent task. `--inherit INDEX TEXT` adds a task whose parent is an earlier task in the same sequence, using a zero-based index.
+The order of repeated options is preserved. Self references, forward references, negative indices, and empty instructions are rejected.
+Task-construction options cannot be combined with `--plan`; scalar settings can be used with either input method.
+The resolved plan has the same `tasks` schema and follows the same runtime as a JSON plan.
+Explicit [saved execution defaults](getting-started.md#save-explicit-execution-defaults) can supply model, effort, and budget fields.
+Append `--dry-run` to inspect or export the plan before execution.
+
+[Status output](status.md) shows recorded progress, current child details, result locations, and recovery instructions. Add `--json` for the original saved state.
 
 ## Check preservation and inheritance
 

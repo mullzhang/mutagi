@@ -66,7 +66,7 @@ def test_rejects_paths_outside_project(path):
 
 def test_cli_forwards_help_and_ships_record_template(tmp_path):
     # Given an installed module invoked outside its checkout.
-    for command in ("experiment", "round", "series", "service", "handoff", "job"):
+    for command in ("init", "check", "experiment", "round", "series", "service", "handoff", "job"):
         # When each subcommand is invoked, then display its own help.
         result = subprocess.run(
             [sys.executable, "-m", "mutagi", command, "--help"],

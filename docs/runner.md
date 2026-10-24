@@ -23,19 +23,29 @@ To add usage-based stopping, see [usage limits](unattended.md#usage-and-stopping
 
 Use a named branch for the shared working tree and leave it free of uncommitted changes.
 The base revision is resolved to a full commit ID at launch.
-Write exploration-specific interests or constraints to a UTF-8 file, `.mutagi/plans/next-exploration.txt`, commit it, and run:
+Set `MODEL` to a model available to your account and pass exploration-specific interests or constraints directly:
 
 ```bash
 mutagi experiment start \
   --base HEAD \
-  --task .mutagi/plans/next-exploration.txt \
-  --model gpt-6-astra --effort medium \
+  --prompt "Compare one concrete assumption using a small reproducible case." \
+  --model "$MODEL" --effort medium \
   --seconds 3600 --reserve-seconds 600
 ```
 
 This example uses the shared revision at launch. To use a common base across a round, specify that fixed commit ID.
 An example task is: "Use a small case with erroneous answers or differing costs to consider up to three distinct questions. Compare the methods' advantages and limitations. A counterexample to a universal guarantee is not a required outcome."
 The controller does not need to choose the final question.
+
+Alternatively, supply a UTF-8 file with `--task path/to/instruction.txt`, or read standard input to EOF with `--task -`.
+Exactly one of `--prompt` and `--task` is required. Empty instructions, conflicting inputs, and missing files fail before execution state is allocated.
+All input methods save the instruction in `.mutagi/runs/<UUID>/task.txt` for the same fixed execution record.
+An instruction file kept in the target repository must be committed to keep the shared tree clean; a direct instruction or stdin requires no input file.
+Use `mutagi check --base HEAD` to inspect prerequisites without starting work.
+Model and effort may instead come from explicit [execution defaults](getting-started.md#save-explicit-execution-defaults) in the selected base commit. CLI values take precedence.
+Append `--dry-run` to print the resolved base, instruction, model, effort, durations, and parent references as JSON without creating or executing a run.
+The preview reads committed project files and checks input and inheritance references; it does not run preparation or establish runtime readiness.
+See [status output](status.md) for the readable checkpoint display and `--json` for scripts.
 
 A full UUIDv4 and UTC start time are generated once at launch and retained in these locations.
 
@@ -62,7 +72,8 @@ Do not overwrite existing experiment folders.
 
 ## Observation records and reproducibility
 
-Use `mutagi template experiment` to obtain the [experiment record template](../src/mutagi/resources/templates/experiment.md).
+The controller includes the bundled [experiment record template](../src/mutagi/resources/templates/experiment.md) in both independent and inherited exploration instructions.
+Use `mutagi template experiment` to print the same template for inspection. Custom template selection is not supported.
 The explorer records the question, comparison targets, decision method, and starting conditions, then preserves work in this order:
 
 1. Commit the implementation, inputs, and verifier used for observation.

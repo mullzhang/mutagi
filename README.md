@@ -10,10 +10,23 @@ Install mutagi from GitHub:
 
 ```bash
 uv tool install git+https://github.com/mullzhang/mutagi.git
+mutagi --version
 mutagi --help
 ```
 
-[Prepare the target Git repository](docs/getting-started.md) before starting an exploration.
+From the root of the existing Git repository you want to explore, generate its configuration and project policies:
+
+```bash
+mutagi init --explore-path src/ --explore-path tests/ --reference README.md
+```
+
+Choose paths that exist in your project or use `mutagi init` for a minimal configuration.
+[Review and commit the generated files, check prerequisites, and start the first exploration](docs/getting-started.md).
+One-off instructions can be passed with `--prompt`; task files and standard input are also supported.
+Use `mutagi init --interactive` to choose settings with a preview, or save explicit model and effort defaults through initialization options.
+Rounds and series can be constructed from CLI arguments; `start --dry-run` prints the resolved inputs before execution.
+See [fixed versions, updates, and releases](docs/installation.md) and [readable status](docs/status.md).
+For a complete project to copy and try, see the [runnable example](examples/README.md).
 See the [user guide](docs/README.md) for configuration and command details.
 
 ## Development and distribution builds
@@ -28,4 +41,5 @@ mise run verify
 ```
 
 The wheel and source distribution are written to `dist/`.
-Internal prompts and the experiment record template are included in the package.
+Internal prompts, initialization assets, and the experiment record template are included in the wheel.
+The source distribution also includes the runnable example.

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "mutagi"
-version = "0.1.0"
+version = "0.2.0"
 description = "Support autonomous exploration and human harvesting of its results"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -24,6 +24,9 @@ only-include = [
     "src/mutagi",
     "tests",
     "docs",
+    "examples",
+    "scripts",
+    "CHANGELOG.md",
     ".github",
     ".gitignore",
     ".pre-commit-config.yaml",

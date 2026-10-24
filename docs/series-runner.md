@@ -8,7 +8,7 @@ The controller does not generate unlimited plans or increase its own budget or p
 
 ## Plan and execute
 
-Use a clean shared branch and specify a JSON plan.
+Use a clean shared branch and specify a JSON plan from a file or standard input.
 Keep reusable plans under `.mutagi/plans/` in Git.
 Create `.mutagi/plans/series-plan.json` before using the commands below.
 The same CLI, authentication, dependencies, and permissions as single-experiment and round execution are required.
@@ -37,6 +37,20 @@ mutagi series status <series-UUID>
 mutagi series resume <same-series-UUID>
 ```
 
+Use `--base`, `--model`, `--effort`, `--seconds`, `--round-seconds`, `--experiment-seconds`, `--integration-seconds`, and `--reserve-seconds` to override individual plan fields.
+Defaults from the selected base commit are applied first, followed by the input plan and explicitly supplied arguments. The input may omit fields supplied by saved defaults or arguments, but the resolved plan must contain every required field.
+For example, the [sample series plan](../examples/minimal-python/.mutagi/plans/series.json) omits `model`:
+
+```bash
+mutagi series start --plan .mutagi/plans/series-plan.json --model "$MODEL"
+cat .mutagi/plans/series-plan.json |
+  mutagi series start --plan - --model "$MODEL"
+```
+
+`--plan -` reads JSON from standard input to EOF. Both paths use the same validators and persist the resolved plan without changing an input file.
+Model selection is required. When a plan includes usage limits, the rate-card model must still match the model after overrides; incompatible rates are rejected.
+Use `--dry-run` to print the resolved plan as JSON without allocating or executing a series. The output is accepted by `--plan`; see [preview behavior](getting-started.md#preview-without-starting-work).
+
 `rounds` must be a finite array containing at least two entries.
 Each round's `tasks` and `parent` use the [round plan format](round-runner.md#plan-and-start).
 This format does not support inheritance from experiment branches across rounds.
@@ -46,6 +60,29 @@ Budgets use wall-clock time and include preparation, preservation, registration,
 Round and task deadlines are shortened to the overall remaining time.
 No new slot starts when only preservation time remains.
 Stop grace periods and preservation work mean these are not strict finish-time guarantees or cost/token caps.
+
+## Repeat a task sequence with CLI arguments
+
+For repeated rounds with the same task pattern, specify `--rounds N` and ordered `--prompt TEXT` or `--inherit INDEX TEXT` options:
+
+```bash
+mutagi series start --base HEAD --rounds 2 \
+  --prompt "Read the integrated knowledge and test one concrete assumption." \
+  --inherit 0 "Test a new boundary made visible by the first result." \
+  --model "$MODEL" --effort medium \
+  --seconds 4800 --round-seconds 2400 --experiment-seconds 900 \
+  --integration-seconds 600 --reserve-seconds 120
+```
+
+At least two rounds are required. Each round receives its own copy of the ordered task sequence; parent indices are local to that round.
+Knowledge is handed off through the existing verified publication mechanism between rounds.
+`--rounds`, `--prompt`, and `--inherit` cannot be combined with `--plan`.
+Use JSON plans for different task patterns per round, adaptation policy, or usage limits.
+CLI task construction does not enable adaptation or infer prices.
+
+Model, effort, and budget fields may come from explicit [saved defaults](getting-started.md#save-explicit-execution-defaults).
+Append `--dry-run` to validate and export the complete plan as JSON before starting.
+[Readable status](status.md) shows progress and current child details; `status --json` prints the original saved state.
 
 ## Handoff to the next round
 

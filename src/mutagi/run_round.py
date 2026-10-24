@@ -27,7 +27,10 @@ from mutagi.run_experiment import (
 )
 
 from mutagi.prompts import render_prompt
+from mutagi.inputs import EFFORTS, add_plan_arguments, read_plan
 from mutagi.project import matches, load_project
+from mutagi.repository import require_ready
+from mutagi.status import add_status_arguments, show_execution
 from mutagi.series_policy import proposal_schema, validate_proposal
 
 INTEGRATION_SCHEMA = {
@@ -36,6 +39,9 @@ INTEGRATION_SCHEMA = {
     "required": ["summary", "limits", "checks"],
     "additionalProperties": False,
 }
+
+
+TERMINAL = ("completed", "budget_exhausted", "usage_exhausted", "usage_unknown")
 
 
 def require_catalog_entry(content, source):
@@ -292,7 +298,7 @@ def validate_plan(plan):
     ):
         raise ValueError("base revision, model, and effort are required")
 
-    if plan["effort"] not in ("low", "medium", "high", "xhigh", "max", "ultra"):
+    if plan["effort"] not in EFFORTS:
         raise ValueError("unsupported reasoning effort")
 
     if not isinstance(plan["tasks"], list) or not plan["tasks"]:
@@ -326,21 +332,16 @@ def create_round(
 ):
     validate_plan(plan)
     require_series_owner(repo, series_id)
-    require_clean(repo)
+    _, base, _ = require_ready(repo, plan["base"])
     for path in (repo / ".mutagi/runs" / "rounds").glob("*/state.json"):
-        if json.loads(path.read_text())["phase"] not in (
-            "completed",
-            "budget_exhausted",
-            "usage_exhausted",
-            "usage_unknown",
-        ):
+        if json.loads(path.read_text())["phase"] not in TERMINAL:
             raise RuntimeError("resume the unfinished round before starting another")
 
     for path in (repo / ".mutagi/runs").glob("*/state.json"):
         if json.loads(path.read_text())["phase"] != "registered":
             raise RuntimeError("finish the unfinished run before starting a round")
 
-    plan = dict(plan, base=git(repo, "rev-parse", plan["base"] + "^{commit}"))
+    plan = dict(plan, base=base)
     identifier = str(uuid4()) if identifier is None else validate_id(identifier)
     directory = repo / ".mutagi/runs" / "rounds" / identifier
     if directory.exists():
@@ -528,12 +529,10 @@ class Round:
 
         run = self.repo / ".mutagi/runs" / item["id"]
         if not (run / "state.json").exists():
-            task = self.directory / (item["id"] + ".txt")
-            task.write_text(allocation["prompt"])
             create(
                 self.repo,
                 allocation["base"],
-                task,
+                allocation["prompt"],
                 plan["model"],
                 plan["effort"],
                 allocation["seconds"],
@@ -669,14 +668,19 @@ def main():
     parser = argparse.ArgumentParser(prog="mutagi round", description=__doc__)
     parser.add_argument("--repo", type=Path, default=Path.cwd())
     commands = parser.add_subparsers(dest="command", required=True)
-    commands.add_parser("start").add_argument("--plan", type=Path, required=True)
-    for name in ("resume", "status"):
-        commands.add_parser(name).add_argument("id", type=validate_id)
+    add_plan_arguments(commands.add_parser("start"))
+    commands.add_parser("resume").add_argument("id", type=validate_id)
+    add_status_arguments(commands.add_parser("status"), validate_id)
 
     args = parser.parse_args()
     repo = Path(git(args.repo, "rev-parse", "--show-toplevel")).resolve()
+    if args.command == "start":
+        plan = read_plan(args, validate_plan, repo=repo)
+        if args.dry_run:
+            print(json.dumps(plan, ensure_ascii=False, indent=2))
+            return
     if args.command == "status":
-        print((repo / ".mutagi/runs" / "rounds" / args.id / "state.json").read_text())
+        show_execution(repo, "round", args.id, raw=args.json)
         return
 
     def interrupted(*_):
@@ -685,16 +689,14 @@ def main():
     signal.signal(signal.SIGTERM, interrupted)
     with lock(repo):
         directory = (
-            create_round(repo, json.loads(args.plan.read_text()))
+            create_round(repo, plan)
             if args.command == "start"
             else repo / ".mutagi/runs" / "rounds" / args.id
         )
         print("Round: " + directory.name, flush=True)
         controller = Round(directory)
         if controller.state.get("series_id") is not None:
-            raise RuntimeError(
-                "use mutagi series resume for a round owned by a series"
-            )
+            raise RuntimeError("use mutagi series resume for a round owned by a series")
 
         try:
             result = controller.advance(recovery=args.command == "resume")
@@ -707,9 +709,7 @@ def main():
         ) as error:
             controller.state["error"] = str(error)
             controller.save()
-            print(
-                f"Incomplete: {error}\nresume round {directory.name}", flush=True
-            )
+            print(f"Incomplete: {error}\nresume round {directory.name}", flush=True)
             raise SystemExit(1) from error
 
         print(json.dumps(result, ensure_ascii=False, indent=2))
