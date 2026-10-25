@@ -81,4 +81,4 @@ mutagi round start --base HEAD \
 
 Remove `--dry-run` to execute the resolved round. Use `series start` with `--rounds 2`, `--round-seconds 2400`, and an appropriate total budget to repeat the task pattern.
 After a run, `mutagi round status <UUID>` or `mutagi series status <UUID>` shows checkpoints, result paths, and next actions. Add `--json` for the saved state.
-For repeated use of one model and effort, save explicit [execution defaults](../../docs/getting-started.md#save-explicit-execution-defaults) and commit them.
+For repeated use of one model and effort, save explicit [execution defaults](../../docs/reference/configuration.md#execution-defaults) and commit them.

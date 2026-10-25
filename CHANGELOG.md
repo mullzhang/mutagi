@@ -2,6 +2,9 @@
 
 ## 0.2.0 (unreleased)
 
+- Group documentation by getting started, concepts, guides, reference, and development; separate configuration, service operation, and release procedures from the introductory guides.
+- Organize implementation and tests into commands, project, execution, and runtime packages; separate shared test fixtures and enforce package boundaries.
+- Launch macOS services through the public service command. Pause and uninstall existing LaunchAgents before updating, then reinstall them with the updated package; saved execution IDs and deadlines are retained.
 - Generate project configuration and policies with `mutagi init`, including explicit preparation presets, saved model and effort defaults, and an optional interactive preview and confirmation.
 - Check prerequisites and recovery commands with `mutagi check`; include the bundled record template automatically in exploration prompts.
 - Accept direct or standard-input exploration instructions, construct ordered rounds and repeated series from CLI arguments, and read or override JSON plans.

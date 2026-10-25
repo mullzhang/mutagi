@@ -1,20 +1,20 @@
 """Entry point for operational commands."""
 
 import argparse
-from importlib import import_module
-from importlib.metadata import version
 import subprocess
 import sys
+from importlib import import_module
+from importlib.metadata import version
 
 COMMANDS = {
-    "init": "initialize",
-    "check": "check",
-    "experiment": "run_experiment",
-    "round": "run_round",
-    "series": "run_series",
-    "service": "series_service",
-    "handoff": "app_handoff",
-    "job": "command_job",
+    "init": "commands.init",
+    "check": "commands.check",
+    "experiment": "commands.experiment",
+    "round": "commands.round",
+    "series": "commands.series",
+    "service": "commands.service",
+    "handoff": "commands.handoff",
+    "job": "commands.job",
 }
 
 

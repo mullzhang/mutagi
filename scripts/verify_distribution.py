@@ -1,6 +1,5 @@
 """Verify built artifacts in fresh environments without model or network calls."""
 
-from pathlib import Path, PurePosixPath
 import hashlib
 import json
 import os
@@ -10,8 +9,10 @@ import subprocess
 import sys
 import tarfile
 import tempfile
-import zipfile
+import time
 import tomllib
+import zipfile
+from pathlib import Path, PurePosixPath
 
 ROOT = Path(__file__).resolve().parents[1]
 VERSION = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]["version"]
@@ -101,6 +102,110 @@ else:
         output.write_text(json.dumps({'title': 'Package verification', 'summary': 'Synthetic result', 'limits': 'No model call', 'record': str(record), 'implementation_commit': implementation, 'checks': 'Package workflow fixture', 'status': 'observed'}))
     print(json.dumps({'type': 'turn.completed'}), flush=True)
 """
+
+
+FAKE_APP_SERVER = r"""import json, sys
+assert sys.argv[1:] == ['app-server', '--listen', 'stdio://']
+def emit(value):
+    print(json.dumps(value), flush=True)
+for line in sys.stdin:
+    message = json.loads(line)
+    method = message['method']
+    if method == 'initialize':
+        emit({'id': message['id'], 'result': {}})
+    elif method == 'thread/start':
+        emit({'id': message['id'], 'result': {'thread': {'id': 'installed-thread'}, 'model': 'synthetic-test-model'}})
+    elif method == 'turn/start':
+        emit({'id': message['id'], 'result': {'turn': {'id': 'installed-turn'}}})
+        emit({'method': 'thread/tokenUsage/updated', 'params': {'threadId': 'installed-thread', 'tokenUsage': {'total': {'inputTokens': 100, 'cachedInputTokens': 0, 'outputTokens': 10, 'reasoningOutputTokens': 0, 'totalTokens': 110}}}})
+        emit({'method': 'item/completed', 'params': {'item': {'type': 'agentMessage', 'phase': 'final_answer', 'text': '{"done": true}'}}})
+        emit({'method': 'turn/completed', 'params': {'turn': {'id': 'installed-turn', 'status': 'completed'}}})
+"""
+
+
+def verify_workers(python, executable, codex, env, project, method):
+    run(
+        [python, "-I", "-m", "mutagi", "service", "--repo", project, "tick"], AUDIT, env
+    )
+    assert not (project / ".mutagi/runs/service.json").exists()
+
+    job = AUDIT / (method + "-job")
+    run(
+        [
+            executable,
+            "job",
+            "start",
+            job,
+            "--cwd",
+            AUDIT,
+            "--seconds",
+            "20",
+            "--command",
+            python,
+            "-I",
+            "-c",
+            "print('Installed supervisor verified')",
+        ],
+        AUDIT,
+        env,
+    )
+    until = time.monotonic() + 25
+    while True:
+        state = json.loads((job / "state.json").read_text())
+        if state["stage"] == "finished":
+            break
+        assert time.monotonic() < until, state
+        time.sleep(0.05)
+    assert state["result"] == {"exit_code": 0, "timed_out": False}
+    assert (job / "command.log").read_text() == "Installed supervisor verified\n"
+    assert (
+        json.loads(run([executable, "job", "status", job, "--json"], AUDIT, env))
+        == state
+    )
+
+    session = AUDIT / (method + "-managed-session")
+    session.mkdir()
+    (session / "state.json").write_text(
+        json.dumps(
+            {
+                "model": "synthetic-test-model",
+                "effort": "medium",
+                "worktree": str(session),
+                "exploration_deadline": time.time() + 30,
+                "usage_budget": {
+                    "tokens": 1000,
+                    "cost": 1,
+                    "rates": {
+                        "input": 1,
+                        "cached_input": 1,
+                        "output": 1,
+                        "unit": "test-units",
+                        "source": "Synthetic distribution fixture",
+                        "model": "synthetic-test-model",
+                    },
+                },
+            }
+        )
+    )
+    (session / "prompt.txt").write_text("Verify the installed managed worker.")
+    (session / "schema.json").write_text('{"type":"object"}\n')
+    original = codex.read_text()
+    try:
+        codex.write_text("#!" + str(python) + "\n" + FAKE_APP_SERVER)
+        output = run(
+            [python, "-I", "-m", "mutagi.execution.codex_session", session], AUDIT, env
+        )
+    finally:
+        codex.write_text(original)
+    assert json.loads((session / "result.json").read_text()) == {"done": True}
+    usage = json.loads((session / "usage.json").read_text())
+    assert usage["complete"] and usage["tokens"] == 110
+    assert json.loads(output.splitlines()[-1]) == {"type": "turn.completed"}
+    return {
+        "job": str(job),
+        "managed_session": str(session),
+        "unassigned_service_tick": True,
+    }
 
 
 def verify_install(artifact, method):
@@ -285,9 +390,10 @@ def verify_install(artifact, method):
     )
     assert run(["git", "-C", project, "status", "--porcelain"], AUDIT).strip() == ""
     assert "BLOCKED" not in run([executable, "check"], project, env)
+    workers = verify_workers(python, executable, fake, env, project, method)
     print(
         method
-        + ": installed initialization, defaults, previews, synthetic experiment/round/series, and status passed",
+        + ": installed workflows, relocated workers, service entry, and status passed",
         flush=True,
     )
     return {
@@ -297,6 +403,7 @@ def verify_install(artifact, method):
         "module": imported,
         "project": str(project),
         "execution_ids": execution_ids,
+        "workers": workers,
         "saved_commit": state["saved_commit"],
     }
 
@@ -369,17 +476,19 @@ run(
         "-c",
         """from pathlib import Path
 import argparse
-from mutagi.inputs import add_plan_arguments, read_plan
-from mutagi import run_experiment, run_round, run_series
+from mutagi.commands.inputs import add_plan_arguments, read_plan
+from mutagi.execution.experiment import Runner, create
+from mutagi.execution.plans import validate_round, validate_series
+from mutagi.execution.state import lock
 root = Path.cwd()
-for kind, module in [('round', run_round), ('series', run_series)]:
+for kind, validate in [('round', validate_round), ('series', validate_series)]:
     parser = argparse.ArgumentParser()
     add_plan_arguments(parser, series=kind == 'series')
     args = parser.parse_args(['--plan', str(root / '.mutagi/plans' / (kind + '.json')), '--model', 'synthetic-test-model'])
-    read_plan(args, module.validate_plan)
-with run_experiment.lock(root):
-    directory = run_experiment.create(root, 'HEAD', 'Prepare the copied example.', 'synthetic-test-model', 'medium', 60, 10)
-job = run_experiment.Runner(directory)
+    read_plan(args, validate)
+with lock(root):
+    directory = create(root, 'HEAD', 'Prepare the copied example.', 'synthetic-test-model', 'medium', 60, 10)
+job = Runner(directory)
 job.prepare()
 assert job.state['phase'] == 'ready'
 print('Copied source example: tests, plan resolution, and preparation passed')
