@@ -4,6 +4,12 @@ A Python package for agents to investigate questions, develop results and knowle
 See [exploration through harvesting](docs/concepts/exploration-and-harvesting.md) and the [harvesting guide](docs/guides/harvesting.md).
 Requires Python 3.12+, POSIX, Git, and an authenticated Codex CLI.
 
+## Execution and usage limits
+
+Use mutagi only with repositories and preparation commands you trust. It runs project commands, delegates executable work to Codex, and creates Git branches and commits. Exploration paths limit the changes the controller accepts; they do not provide OS-level isolation.
+
+Time limits can be exceeded while stopping and preserving work, and usage limits do not guarantee strict billing caps. Read the [project setup and boundaries](docs/getting-started/first-exploration.md) and [usage monitoring limits](docs/guides/adaptation-and-usage.md#usage-and-stopping) before starting an exploration. For suspected vulnerabilities, follow the [security reporting policy](SECURITY.md).
+
 ## Installation and use
 
 Install mutagi from GitHub:

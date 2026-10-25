@@ -32,6 +32,7 @@ only-include = [
     ".pre-commit-config.yaml",
     "LICENSE",
     "README.md",
+    "SECURITY.md",
     "mise.toml",
     "pyproject.toml",
     "uv.lock",
