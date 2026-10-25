@@ -67,6 +67,7 @@ Raw CLI logs are not automatically copied into the shared catalog or Git.
 
 Use full lowercase UUIDv4 values for experiment IDs and parent references.
 Controllers generate them independently; no shared sequence number needs reserving.
+The execution ID is also the observation record ID. Do not generate a separate UUID for a record or knowledge note.
 Create an experiment folder named `YYYY-MM-DDTHHMMSSZ_<slug>_<UUID>` under the configured `experiments` directory.
 The timestamp is the UTC start time, and `slug` describes the question using lowercase English words and hyphens.
 Resuming the same exploration retains its ID and start time. Inheriting a different question creates new ones.
@@ -75,7 +76,9 @@ Do not overwrite existing experiment folders.
 ## Observation records and reproducibility
 
 The controller includes the bundled [experiment record template](../../src/mutagi/resources/templates/experiment.md) in both independent and inherited exploration instructions.
-Use `mutagi template experiment` to print the same template for inspection. Custom template selection is not supported.
+It fills `id`, `started_at`, `mode`, `parent_ids`, and `base_commit` from the saved execution state; `human_decision` is fixed to `unreviewed`.
+Copy these fields unchanged and use the assigned ID in folder names, knowledge notes, and experiment references. Only `implementation_commit` and `status` are supplied from the exploration outcome.
+Use `mutagi template experiment` to inspect the template with placeholders before an execution is assigned. Custom template selection is not supported.
 The explorer records the question, comparison targets, decision method, and starting conditions, then preserves work in this order:
 
 1. Commit the implementation, inputs, and verifier used for observation.
@@ -94,6 +97,7 @@ Reference files on other branches by saved commit and path. Retain a reference b
 
 Pass the saved commit containing the parent's code, revised notes, and record to `--base`.
 Also specify the parent ID and an observation record present at that revision.
+The parent ID must match the unique `id` in that record's opening frontmatter; an ID quoted in its body is not a parent identity.
 Save the new task as `.mutagi/plans/inherited-exploration.txt` and commit it on the controller's shared branch.
 Set these variables to the parent's full saved commit ID, UUID, and repository-relative record path.
 
@@ -126,6 +130,8 @@ Termination is not guaranteed for arbitrary daemons that start and detach betwee
 Phases are `preparing -> ready -> executing -> collecting -> saving -> saved -> registered`.
 On normal completion, the runner checks the final JSON against the record's ID, base revision, parents, implementation ancestry, and write scope.
 Use the template's frontmatter fields, a single bracketed line for `parent_ids`, and a single-quoted UTC timestamp for `started_at`.
+Each required field must occur exactly once in the opening frontmatter block. Matching text in the body does not satisfy metadata validation.
+An ID mismatch reports its expected and actual values; the original record is preserved as invalid rather than silently rewritten.
 The agent may write only to configured `exploration_paths` and its experiment folder; the runner checks the diff again before preservation.
 If out-of-scope changes exist, it recovers in-scope work and stops automatic registration.
 This is a post-change check, not file-level access control.

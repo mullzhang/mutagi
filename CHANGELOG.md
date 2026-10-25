@@ -2,6 +2,7 @@
 
 ## 0.2.0 (unreleased)
 
+- Fill experiment record identity from saved execution state before prompting the explorer. Validate unique fields in the opening frontmatter and report mismatched values without rewriting the original record.
 - Group documentation by getting started, concepts, guides, reference, and development; separate configuration, service operation, and release procedures from the introductory guides.
 - Organize implementation and tests into commands, project, execution, and runtime packages; separate shared test fixtures and enforce package boundaries.
 - Launch macOS services through the public service command. Pause and uninstall existing LaunchAgents before updating, then reinstall them with the updated package; saved execution IDs and deadlines are retained.

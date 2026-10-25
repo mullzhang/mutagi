@@ -49,6 +49,7 @@ def test_cli_forwards_help_and_ships_record_template(tmp_path):
         check=True,
     )
     assert "human_decision: unreviewed" in result.stdout
+    assert "id: {id}\n" in result.stdout
 
 
 def test_service_tick_exits_normally_after_saving_shutdown_checkpoint(

@@ -97,8 +97,11 @@ else:
         subprocess.run(['git', 'commit', '-m', 'test: preserve synthetic input'], check=True, stdout=subprocess.DEVNULL)
         implementation = subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()
         record = folder / 'README.md'
-        mode = 'inherited' if state['parent_ids'] else 'independent'
-        record.write_text('---\nid: ' + state['id'] + "\nstarted_at: '" + state['started_at'] + "'\nbase_commit: " + state['base'] + '\nmode: ' + mode + '\nparent_ids: ' + json.dumps(state['parent_ids']) + '\nimplementation_commit: ' + implementation + '\nstatus: observed\nhuman_decision: unreviewed\n---\n\n# Synthetic package verification\nNo model was called.\n')
+        _, header, body = prompt.rsplit('\n---\n', 2)
+        fields = dict(line.split(': ', 1) for line in header.splitlines())
+        assert fields == {'id': state['id'], 'started_at': "'" + state['started_at'] + "'", 'base_commit': state['base'], 'mode': 'inherited' if state['parent_ids'] else 'independent', 'parent_ids': json.dumps(state['parent_ids']), 'implementation_commit': 'null', 'status': 'unresolved', 'human_decision': 'unreviewed'}
+        record.write_text(('---\n' + header + '\n---\n' + body).replace('implementation_commit: null', 'implementation_commit: ' + implementation, 1).replace('status: unresolved', 'status: observed', 1).replace('# <Name of the question>', '# Synthetic package verification', 1))
+        record.write_text(record.read_text() + '\nNo model was called.\n')
         output.write_text(json.dumps({'title': 'Package verification', 'summary': 'Synthetic result', 'limits': 'No model call', 'record': str(record), 'implementation_commit': implementation, 'checks': 'Package workflow fixture', 'status': 'observed'}))
     print(json.dumps({'type': 'turn.completed'}), flush=True)
 """

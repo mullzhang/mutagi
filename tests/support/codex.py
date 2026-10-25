@@ -51,7 +51,10 @@ subprocess.run(['git','add',str(d)],check=True)
 subprocess.run(['git','commit','-m','feat(experiment): fix input'],check=True,stdout=subprocess.DEVNULL)
 implementation=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()
 record=d/'README.md'
-record.write_text('---\\nid: '+s['id']+"\\nstarted_at: '"+s['started_at']+"'\\nbase_commit: "+s['base']+'\\nmode: '+('inherited' if s['parent_ids'] else 'independent')+'\\nparent_ids: '+json.dumps(s['parent_ids'])+'\\nimplementation_commit: '+implementation+'\\nstatus: observed\\nhuman_decision: unreviewed\\n---\\n\\n# Test question\\n')
+_, header, body = prompt.rsplit('\\n---\\n', 2)
+fields = dict(line.split(': ', 1) for line in header.splitlines())
+assert fields == {{'id': s['id'], 'started_at': "'" + s['started_at'] + "'", 'base_commit': s['base'], 'mode': 'inherited' if s['parent_ids'] else 'independent', 'parent_ids': json.dumps(s['parent_ids']), 'implementation_commit': 'null', 'status': 'unresolved', 'human_decision': 'unreviewed'}}
+record.write_text(('---\\n' + header + '\\n---\\n' + body).replace('implementation_commit: null', 'implementation_commit: ' + implementation, 1).replace('status: unresolved', 'status: observed', 1).replace('# <Name of the question>', '# Test question', 1))
 (d/'necessary.txt').write_text('untracked evidence')
 out.write_text(json.dumps({{"title":"Test question","summary":"Finite result","limits":"Synthetic fixture","record":str(record),"implementation_commit":implementation,"checks":"fixture","status":"observed"}}))
 print(json.dumps({{"type":"turn.completed"}}),flush=True)

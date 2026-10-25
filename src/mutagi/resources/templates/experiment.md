@@ -1,9 +1,9 @@
 ---
-id: null
-started_at: null
-mode: null
-parent_ids: []
-base_commit: null
+id: {id}
+started_at: '{started_at}'
+mode: {mode}
+parent_ids: {parent_ids}
+base_commit: {base_commit}
 implementation_commit: null
 status: unresolved
 human_decision: unreviewed
@@ -11,8 +11,10 @@ human_decision: unreviewed
 
 # <Name of the question>
 
-Use a full UUIDv4 for `id` and the UTC start time fixed at launch for `started_at`.
-Name the folder `YYYY-MM-DDTHHMMSSZ_<question-slug>_<UUID>` and use UUIDs for parent references.
+The controller fills the identity fields above from the fixed execution state.
+Keep those values unchanged; do not generate a new UUID for the record.
+Use that same `id` in the folder name, knowledge notes, and references to this experiment.
+Name the folder `YYYY-MM-DDTHHMMSSZ_<question-slug>_<UUID>` using the assigned start time and ID.
 
 ## Starting conditions
 

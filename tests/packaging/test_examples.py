@@ -56,4 +56,5 @@ def test_sample_can_be_copied_tested_and_prepared(tmp_path):
     job = experiment.Runner(directory)
     job.prepare()
     assert job.state["phase"] == "ready"
-    assert record_template() in job.prompt()
+    assert record_template().partition("\n---\n")[2] in job.prompt()
+    assert f"id: {job.state['id']}\n" in job.prompt()

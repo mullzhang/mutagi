@@ -13,6 +13,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from mutagi.execution.plans import validate_experiment, validate_parent
+from mutagi.execution.records import record_field, record_frontmatter
 from mutagi.execution.state import (
     require_series_owner,
     service_pause_requested,
@@ -217,11 +218,12 @@ class Runner:
     def prompt(self):
         s = self.state
         mode = "inherit" if s["parent_ids"] else "explore"
+        exploration_kind = "inherited" if s["parent_ids"] else "independent"
         return render_prompt(
             "explore",
             state=s,
             project=self.project,
-            exploration_kind="inherited" if s["parent_ids"] else "independent",
+            exploration_kind=exploration_kind,
             project_prompt=self.project["prompts"][mode],
             exploration_deadline=utc(s["exploration_deadline"]),
             deadline=utc(s["deadline"]),
@@ -230,7 +232,13 @@ class Runner:
                 path.format(id=s["id"]) for path in self.project["exploration_paths"]
             ],
             folder_time=s["started_at"].replace(":", ""),
-            record_template=record_template(),
+            record_template=record_template().rstrip().format(
+                id=s["id"],
+                started_at=s["started_at"],
+                mode=exploration_kind,
+                parent_ids=json.dumps(s["parent_ids"]),
+                base_commit=s["base"],
+            ),
         )
 
     def execute(self):
@@ -434,22 +442,23 @@ class Runner:
         ):
             raise ValueError("the record must be a regular file within this experiment")
 
-        content = record.read_text()
-        for pattern in (
-            r"^id: " + s["id"] + r"$",
-            r"^base_commit: " + s["base"] + r"$",
-            r"^human_decision: unreviewed$",
-            r"^status: " + result["status"] + r"$",
-            r"^started_at: '" + re.escape(s["started_at"]) + r"'$",
-        ):
-            if not re.search(pattern, content, re.M):
-                raise ValueError("observation record metadata is inconsistent")
+        frontmatter = record_frontmatter(record.read_text())
+        for name, expected in {
+            "id": s["id"],
+            "base_commit": s["base"],
+            "human_decision": "unreviewed",
+            "status": result["status"],
+            "started_at": f"'{s['started_at']}'",
+            "mode": "inherited" if s["parent_ids"] else "independent",
+        }.items():
+            actual = record_field(frontmatter, name)
+            if actual != expected:
+                raise ValueError(
+                    f"observation record {name} does not match: "
+                    f"expected {expected!r}; found {actual!r}"
+                )
 
-        mode = "inherited" if s["parent_ids"] else "independent"
-        if not re.search(r"^mode: " + mode + r"$", content, re.M):
-            raise ValueError("the record mode differs from the assigned mode")
-
-        parents = re.search(r"^parent_ids: \[(.*)\]$", content, re.M)
+        parents = re.fullmatch(r"\[(.*)\]", record_field(frontmatter, "parent_ids"))
         if parents is None:
             raise ValueError("the record requires parent_ids in inline form")
 
@@ -460,9 +469,8 @@ class Runner:
             raise ValueError("the record parents differ from the assigned parents")
 
         implementation = result["implementation_commit"]
-        if implementation and not re.search(
-            r"^implementation_commit: " + implementation + r"$", content, re.M
-        ):
+        recorded_implementation = record_field(frontmatter, "implementation_commit")
+        if implementation and recorded_implementation != implementation:
             raise ValueError(
                 "the recorded implementation revision differs from the reported commit"
             )

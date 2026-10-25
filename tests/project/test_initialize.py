@@ -49,7 +49,8 @@ def test_default_initialization_can_prepare_a_committed_project(empty_repo):
     job = experiment.Runner(directory)
     job.prepare()
     assert job.state["phase"] == "ready"
-    assert record_template() in job.prompt()
+    assert record_template().partition("\n---\n")[2] in job.prompt()
+    assert f"id: {job.state['id']}\n" in job.prompt()
     assert git(empty_repo, "status", "--porcelain") == ""
 
 

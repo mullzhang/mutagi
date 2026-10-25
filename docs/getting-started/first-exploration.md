@@ -46,8 +46,9 @@ To reuse a selected model, effort, or time allocation, save [execution defaults]
 
 Review `.mutagi/config.toml` and the three generated project prompts.
 The prompts provide general exploration, inheritance, and knowledge-integration policy. Add project-specific interests, constraints, and verification methods.
-The controller automatically supplies the bundled experiment record template to independent and inherited explorations.
-`mutagi template experiment` prints that same template for inspection. Custom record-template selection is not supported.
+The controller automatically supplies the bundled experiment record template to independent and inherited explorations, with the execution ID, start time, mode, parents, and base revision already filled.
+Keep those assigned values unchanged in the record and reuse the same ID in knowledge references.
+`mutagi template experiment` prints the template with placeholders for inspection before an execution is assigned. Custom record-template selection is not supported.
 
 | Prompt | Purpose |
 | --- | --- |

@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import math
-import re
 
 from mutagi.execution.policy import validate_adaptation
+from mutagi.execution.records import record_field, record_frontmatter
 from mutagi.execution.state import validate_id
 from mutagi.project.repository import git, project_at, resolve_base
 from mutagi.project.settings import EFFORTS, execution_defaults
@@ -50,9 +50,11 @@ def validate_parent(repo, base, parent_id, parent_record):
     if parent_id:
         validate_id(parent_id)
         content = git(repo, "show", base + ":" + parent_record)
-        if not re.search(r"^id: " + re.escape(parent_id) + r"$", content, re.M):
+        actual_id = record_field(record_frontmatter(content), "id")
+        if actual_id != parent_id:
             raise ValueError(
-                "the parent record at the base commit does not match its ID"
+                "the parent record at the base commit does not match its ID: "
+                f"expected {parent_id!r}; found {actual_id!r}"
             )
 
 

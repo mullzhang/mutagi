@@ -26,12 +26,13 @@ Do not use subagents, separate tasks, background processes, setsid, or nohup. Wa
 First commit the implementation and inputs to fix the observed revision, then preserve its results and README.md.
 If Git operations are denied, use approval requests within your authorized scope; do not bypass restrictions.
 Do not report unverified work as successful or missing costs as zero. Keep human_decision as unreviewed.
-In the record frontmatter, use independent or inherited for mode, a single bracketed line for parent_ids, and the UTC timestamp above in single quotes for started_at.
+Copy the prefilled record frontmatter below. Keep id, started_at, mode, parent_ids, base_commit, and human_decision unchanged.
+The record ID is this execution's ID, not a new identifier. Use it unchanged in knowledge notes and experiment references.
 Record relevant checks, reproduction steps, negative results, and limitations. Preserve what is known even if the work cannot be completed.
 Return the required JSON with title, summary, limits, status, the repository-relative record path,
 implementation_commit for the observed revision (an empty string if unobserved), and checks describing the checks performed.
 The final JSON does not require its own preservation commit ID. The controller fixes the final revision.
 
-Use the following bundled template for your experiment README.md, filling its metadata with the assigned execution values:
+Use the following bundled template for your experiment README.md. The controller has filled its fixed metadata; set implementation_commit and status to match your final JSON and complete the body:
 
 {record_template}
