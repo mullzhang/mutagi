@@ -28,6 +28,27 @@ Run from the target repository root or supply it through `--repo` where supporte
 `handoff` preserves results using run state and a receipt prepared by the controller. It does not create or stop App chats.
 Append `--help` to a command to inspect its arguments.
 
+## Human display and data output
+
+Commands use Typer for typed inputs and help, with shared Rich output for people.
+The default display leads with the result or checkpoint, limitations needing attention, and the next action.
+Use `--details` on `check`, status commands, and harvest list/show for supporting diagnostics and full references.
+See the [common display design](../development/cli-display-design.md) for the complete inventory and examples.
+
+Use `--json` for structured results from initialization, checks, execution start/resume/status, service controls, job controls, and harvest list/show/checkout/record.
+Status JSON is the original saved state; it adds no live measurements.
+Execution start/resume sends startup and recovery notices to stderr and one completion payload to stdout.
+Errors use stderr: invalid CLI inputs exit with code 2; blocked prerequisites or failed operations exit with code 1.
+Help and successful commands exit with code 0.
+
+Reusable `start --dry-run` plans, `harvest prepare` prompts, `template experiment`, and `harvest show --record`/`--diff` bypass presentation and remain unstyled stdout payloads.
+`init --dry-run --json` exports the generated-file preview as JSON; interactive initialization requires human output.
+Redirected human output uses plain text unless color is explicitly forced; `NO_COLOR` disables color.
+Narrow result lists use stacked entries. Suggested commands stay on one logical line for copying.
+
+For ordered round/series/service tasks, repeat `--step 'none: instruction'` or `--step '0: inherited instruction'`.
+For job launch, separate the external executable and its flags with `--`, for example `mutagi job start /tmp/job --cwd "$PWD" --seconds 60 -- python3 experiment.py`.
+
 ## Initialization options
 
 For the complete first-run workflow, see [prepare a project](../getting-started/first-exploration.md).

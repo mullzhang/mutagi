@@ -1,50 +1,82 @@
-"""Run one command with a deadline under a detached, recoverable POSIX supervisor."""
+"""Typed external command supervision with human output or clean JSON."""
 
-from __future__ import annotations
-
-import argparse
-import json
 from pathlib import Path
+from typing import Annotated
 
+import typer
+
+from mutagi.commands import display
+from mutagi.commands.common import Details, Json, command, group
 from mutagi.commands.status import show_job
-from mutagi.runtime.jobs import observe, read_state, recover, request_stop, start
+from mutagi.runtime.jobs import (
+    observe,
+    read_state,
+    recover as recover_job,
+    request_stop,
+    start as start_job,
+)
+
+app = group(
+    "Run an external command with a deadline, inspect its supervisor, or recover it."
+)
+Directory = Annotated[Path, typer.Argument(help="Dedicated job record directory.")]
 
 
-def main():
-    parser = argparse.ArgumentParser(prog="mutagi job", description=__doc__)
-    subs = parser.add_subparsers(dest="action", required=True)
-    launch = subs.add_parser("start")
-    launch.add_argument("directory", type=Path)
-    launch.add_argument("--cwd", required=True, type=Path)
-    launch.add_argument("--seconds", required=True, type=float)
-    launch.add_argument("--command", nargs=argparse.REMAINDER, required=True)
-    for action in ("status", "stop", "recover"):
-        command = subs.add_parser(action)
-        command.add_argument("directory", type=Path)
-        if action == "status":
-            command.add_argument(
-                "--json",
-                action="store_true",
-                help="Print the saved state JSON without process observations",
-            )
-
-    args = parser.parse_args()
-    directory = args.directory.resolve()
-    if args.action == "status" and args.json:
-        print((directory / "state.json").read_text(), end="")
-        return
-
-    if args.action == "start":
-        state = start(directory, args.cwd.resolve(), args.seconds, args.command)
-    elif args.action == "recover":
-        state = recover(directory)
+@command(app)
+def start(
+    directory: Directory,
+    cwd: Annotated[
+        Path,
+        typer.Option(
+            "--cwd", exists=True, file_okay=False, help="Command working directory."
+        ),
+    ],
+    seconds: Annotated[
+        float, typer.Option("--seconds", help="Time budget including stopping.")
+    ],
+    command: Annotated[
+        list[str], typer.Argument(help="External command and arguments, after --.")
+    ],
+    json: Json = False,
+):
+    """Start a supervised command: DIRECTORY --cwd PATH --seconds N -- COMMAND ARGS."""
+    directory = directory.resolve()
+    state = start_job(directory, cwd.resolve(), seconds, command)
+    if json:
+        display.payload(state)
     else:
-        state = read_state(directory)
-        if args.action == "stop":
-            request_stop(directory)
-        state = observe(state)
+        show_job(directory, observe(state))
 
-    if args.action == "status":
-        show_job(directory, state)
+
+@command(app)
+def status(directory: Directory, json: Json = False, details: Details = False):
+    """Read the saved state, or additionally observe the supervisor for human output."""
+    directory = directory.resolve()
+    if json:
+        display.text_payload((directory / "state.json").read_text())
     else:
-        print(json.dumps(state, indent=2))
+        show_job(directory, observe(read_state(directory)), details=details)
+
+
+@command(app)
+def stop(directory: Directory, json: Json = False):
+    """Request a stop; the supervisor owns process termination and preservation."""
+    directory = directory.resolve()
+    state = read_state(directory)
+    request_stop(directory)
+    if json:
+        display.payload(observe(state))
+    else:
+        display.title("Stop requested")
+        show_job(directory, observe(state))
+
+
+@command(app)
+def recover(directory: Directory, json: Json = False):
+    """Recover recorded process ownership without rerunning the command."""
+    directory = directory.resolve()
+    state = recover_job(directory)
+    if json:
+        display.payload(state)
+    else:
+        show_job(directory, observe(state))

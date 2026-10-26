@@ -64,14 +64,14 @@ A simple round needs no plan file:
 
 ```bash
 mutagi round start --base HEAD \
-  --prompt "Compare two counting definitions on a finite input." \
-  --inherit 0 "Use the first result to test a newly identified boundary." \
+  --step "none: Compare two counting definitions on a finite input." \
+  --step "0: Use the first result to test a newly identified boundary." \
   --model "$MODEL" --effort medium \
   --seconds 2400 --experiment-seconds 900 \
   --integration-seconds 600 --reserve-seconds 120
 ```
 
-`--prompt TEXT` adds an independent task. `--inherit INDEX TEXT` adds a task whose parent is an earlier task in the same sequence, using a zero-based index.
+`--step 'none: TEXT'` adds an independent task. `--step 'INDEX: TEXT'` adds a task whose parent is an earlier task in the same sequence, using a zero-based index. The colon separates the parent from the instruction; leading whitespace after the colon is removed.
 The order of repeated options is preserved. Self references, forward references, negative indices, and empty instructions are rejected.
 Task-construction options cannot be combined with `--plan`; scalar settings can be used with either input method.
 The resolved plan has the same `tasks` schema and follows the same runtime as a JSON plan.

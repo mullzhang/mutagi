@@ -12,9 +12,16 @@ The package has four responsibility groups:
 | `execution` | Experiments, integration, rounds, series, plan validation, recovery ownership, usage, and App handoff | `project`, `runtime`, and `prompts` |
 | `runtime` | POSIX process identity and cleanup, detached command jobs, file storage, and launchd installation | Other runtime modules |
 
-`cli.py` dispatches the public commands and exposes the `mutagi.cli:main` entry point.
+`cli.py` builds the public Typer command tree from explicit command-module imports and exposes the `mutagi.cli:main` entry point.
 `__main__.py` supports `python -m mutagi`.
 `prompts.py` reads bundled resources from `importlib.resources.files("mutagi")`; the assets remain under `resources/`.
+
+`commands/common.py` shares typed options, input validation, and operational error boundaries.
+`commands/inputs.py` resolves ordered task inputs and JSON plans before execution allocation.
+`commands/display.py` owns the Rich components and the separate undecorated payload writers.
+`commands/runs.py` reports execution and recovery without changing controller checkpoints or ownership.
+The [display design](cli-display-design.md) describes help, defaults, details, stream contracts, and deliberate public input changes.
+Typer and Rich are runtime dependencies; the execution and runtime layers retain their own responsibilities.
 
 ## Execution and recovery
 

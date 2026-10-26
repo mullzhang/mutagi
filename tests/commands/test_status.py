@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import json
+import re
 import sys
 import time
+
+from tests.support.cli import invoke
 
 import pytest
 
@@ -38,14 +41,14 @@ def test_status_shows_progress_and_preserves_raw_state(
     before = snapshot(repo)
     command = [f"mutagi {kind}", "--repo", str(repo), "status", directory.name]
     monkeypatch.setattr(sys, "argv", command)
-    module.main()
+    invoke(module)
     output = capsys.readouterr().out
-    assert "Recorded phase: running" in output
-    assert "Recorded progress: 0/" in output
+    assert re.search(r"Recorded phase\s+running", output)
+    assert re.search(r"Recorded progress\s+0/", output)
     assert "Human adoption: not tracked" in output
-    assert f"resume {directory.name}" in output
+    assert f"resume {directory.name}" in " ".join(output.split())
     monkeypatch.setattr(sys, "argv", [*command, "--json"])
-    module.main()
+    invoke(module)
     assert capsys.readouterr().out == (directory / "state.json").read_text()
     assert snapshot(repo) == before
 
@@ -75,19 +78,21 @@ def test_experiment_status_distinguishes_observation_preservation_and_adoption(
         "argv",
         ["mutagi experiment", "--repo", str(repo), "status", directory.name],
     )
-    experiment_command.main()
+    invoke(experiment_command)
     output = capsys.readouterr().out
-    assert "Recorded phase: registered" in output
-    assert "Reported observation: refuted" in output
-    assert "Saved revision:" in output
+    assert re.search(r"Recorded phase\s+registered", output)
+    assert re.search(r"Reported observation\s+refuted", output)
+    assert "Saved revision" in output
     assert "Human adoption: not tracked" in output
-    assert "git -C" in output
+    assert "git -C" not in output
+    status.show_execution(repo, "experiment", directory.name, details=True)
+    assert "git -C" in capsys.readouterr().out
     monkeypatch.setattr(
         sys,
         "argv",
         ["mutagi experiment", "--repo", str(repo), "status", directory.name, "--json"],
     )
-    experiment_command.main()
+    invoke(experiment_command)
     assert json.loads(capsys.readouterr().out) == state
     assert snapshot(repo) == before
 
@@ -103,10 +108,12 @@ def test_nested_status_uses_owner_for_recovery(repo, capsys):
         )
     status.show_execution(repo, "experiment", child_id)
     output = capsys.readouterr().out
-    assert f"mutagi round --repo {repo} resume {directory.name}" in output
+    assert f"mutagi round --repo {repo} resume {directory.name}" in " ".join(
+        output.split()
+    )
     assert f"experiment --repo {repo} resume" not in output
     status.show_execution(repo, "round", directory.name)
-    assert "Current child details:" in capsys.readouterr().out
+    assert "Current child" in capsys.readouterr().out
 
 
 def test_process_observation_checks_identity_and_system_boot(monkeypatch):
@@ -147,11 +154,14 @@ def test_job_status_read_only_and_raw_json(repo, monkeypatch, capsys):
     before = snapshot(repo)
     monkeypatch.setattr(jobs, "processes", lambda: {})
     monkeypatch.setattr(sys, "argv", ["mutagi job", "status", str(directory)])
-    job_command.main()
+    invoke(job_command)
     output = capsys.readouterr().out
-    assert "Recorded stage: finished" in output and "Command log:" in output
+    assert re.search(r"Recorded stage\s+finished", output)
+    assert "Command log" not in output
+    status.show_job(directory, jobs.observe(dict(state)), details=True)
+    assert "Command log" in capsys.readouterr().out
     monkeypatch.setattr(sys, "argv", ["mutagi job", "status", str(directory), "--json"])
-    job_command.main()
+    invoke(job_command)
     assert json.loads(capsys.readouterr().out) == state
     assert snapshot(repo) == before
 
@@ -165,13 +175,13 @@ def test_service_status_preserves_service_and_series_checkpoints(
     before = snapshot(repo)
     command = ["mutagi service", "--repo", str(repo), "status"]
     monkeypatch.setattr(sys, "argv", command)
-    service_command.main()
+    invoke(service_command)
     output = capsys.readouterr().out
-    assert "Service recorded phase: pending" in output
-    assert "Recorded progress:" in output
+    assert "Service · pending" in output
+    assert "Recorded progress" in output
     assert "does not prove" in output
     monkeypatch.setattr(sys, "argv", [*command, "--json"])
-    service_command.main()
+    invoke(service_command)
     assert json.loads(capsys.readouterr().out) == json.loads(
         service.config_path(repo).read_text()
     )
@@ -187,7 +197,7 @@ def test_app_handoff_status_does_not_suggest_cli_resume(repo, capsys):
     before = snapshot(repo)
     status.show_execution(repo, "experiment", directory.name)
     output = capsys.readouterr().out
-    assert "Assigned App thread: assigned-app-thread" in output
+    assert re.search(r"Assigned App thread\s+assigned-app-thread", output)
     assert "mutagi handoff" in output and "--app-observation" in output
     assert "resume" not in output
     assert snapshot(repo) == before

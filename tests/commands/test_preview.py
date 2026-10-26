@@ -4,7 +4,10 @@ import io
 import json
 import sys
 
+from tests.support.cli import invoke
+
 import pytest
+from typer import BadParameter
 
 import mutagi.commands.experiment as experiment_command
 import mutagi.commands.round as round_command
@@ -28,7 +31,7 @@ def test_plan_preview_is_read_only_and_round_trips(
     repo, monkeypatch, capsys, kind, module
 ):
     plan_kind = "series" if kind == "service" else kind
-    _, flags = plan_args(plan_kind, "--prompt", "first", "--inherit", "0", "next")
+    flags = plan_args(plan_kind, "--step", "none: first", "--step", "0: next")
     if plan_kind == "series":
         flags += ["--rounds", "2"]
     before = snapshot(repo)
@@ -37,7 +40,7 @@ def test_plan_preview_is_read_only_and_round_trips(
         "argv",
         [f"mutagi {kind}", "--repo", str(repo), "start", *flags, "--dry-run"],
     )
-    module.main()
+    invoke(module)
     resolved = json.loads(capsys.readouterr().out)
     assert resolved["base"] == git(repo, "rev-parse", "HEAD")
     assert snapshot(repo) == before
@@ -47,7 +50,7 @@ def test_plan_preview_is_read_only_and_round_trips(
         "argv",
         [f"mutagi {kind}", "--repo", str(repo), "start", "--plan", "-", "--dry-run"],
     )
-    module.main()
+    invoke(module)
     assert json.loads(capsys.readouterr().out) == resolved
     assert snapshot(repo) == before
 
@@ -75,12 +78,12 @@ def test_defaults_come_from_selected_commit_and_explicit_values_win(
             "start",
             "--base",
             chosen,
-            "--prompt",
-            "case",
+            "--step",
+            "none: case",
             "--dry-run",
         ],
     )
-    round_command.main()
+    invoke(round_command)
     result = json.loads(capsys.readouterr().out)
     assert result["model"] == "round-model"
     assert result["effort"] == "medium"
@@ -108,7 +111,7 @@ def test_defaults_come_from_selected_commit_and_explicit_values_win(
             "--dry-run",
         ],
     )
-    round_command.main()
+    invoke(round_command)
     assert json.loads(capsys.readouterr().out)["model"] == "plan-model"
     monkeypatch.setattr(
         sys,
@@ -127,7 +130,7 @@ def test_defaults_come_from_selected_commit_and_explicit_values_win(
             "--dry-run",
         ],
     )
-    round_command.main()
+    invoke(round_command)
     resolved = json.loads(capsys.readouterr().out)
     assert (resolved["model"], resolved["effort"]) == ("cli-model", "high")
     assert snapshot(repo) == before
@@ -149,14 +152,14 @@ def test_experiment_preview_and_execution_use_same_saved_defaults(
     ]
     before = snapshot(repo)
     monkeypatch.setattr(sys, "argv", [*flags, "--dry-run"])
-    experiment_command.main()
+    invoke(experiment_command)
     preview = json.loads(capsys.readouterr().out)
     assert snapshot(repo) == before
     assert preview["model"] == "common-model"
     assert preview["seconds"] == 90 and preview["reserve_seconds"] == 15
     monkeypatch.setattr(experiment.Runner, "advance", lambda self, recovery: self.state)
     monkeypatch.setattr(sys, "argv", flags)
-    experiment_command.main()
+    invoke(experiment_command)
     state_path = next((repo / ".mutagi/runs").glob("*/state.json"))
     state = json.loads(state_path.read_text())
     for key in ("base", "model", "effort", "seconds", "reserve_seconds"):
@@ -180,13 +183,13 @@ def test_experiment_preview_rejects_missing_model_and_bad_parent_without_writes(
     ]
     before = snapshot(repo)
     monkeypatch.setattr(sys, "argv", base)
-    with pytest.raises(ValueError, match="--model and --effort"):
-        experiment_command.main()
+    with pytest.raises(BadParameter, match="--model and --effort"):
+        invoke(experiment_command)
     monkeypatch.setattr(
         sys,
         "argv",
         [*base, "--model", "chosen", "--effort", "medium", "--parent-id", "missing"],
     )
-    with pytest.raises(ValueError, match="both --parent"):
-        experiment_command.main()
+    with pytest.raises(BadParameter, match="both --parent"):
+        invoke(experiment_command)
     assert snapshot(repo) == before

@@ -1,67 +1,123 @@
-"""Run a fixed-budget series of rounds from successively published knowledge."""
+"""Typed commands for finite series execution and its checkpoints."""
 
-from __future__ import annotations
+from typing import Annotated
 
-import argparse
-import json
-import signal
-import subprocess
-from pathlib import Path
+import typer
 
-from mutagi.commands.inputs import add_plan_arguments, read_plan
-from mutagi.commands.status import add_status_arguments, show_execution
+from mutagi.commands import display
+from mutagi.commands.common import (
+    Details,
+    EffortOption,
+    Identifier,
+    Json,
+    Model,
+    command,
+    configure,
+    group,
+    repository,
+    supplied,
+    usage,
+)
+from mutagi.commands.inputs import Base, DryRun, Plan, Steps, read_plan
+from mutagi.commands.runs import advance, interruptible
+from mutagi.commands.status import show_execution
 from mutagi.execution.plans import validate_series
 from mutagi.execution.series import Series, create_series
-from mutagi.execution.state import lock, validate_id
-from mutagi.project.repository import git
+from mutagi.execution.state import lock
+from mutagi.execution.service import manage
+
+app = group(
+    "Run a finite series, then inspect progress or recover its saved checkpoints."
+)
+app.callback()(configure)
 
 
-def main():
-    parser = argparse.ArgumentParser(prog="mutagi series", description=__doc__)
-    parser.add_argument("--repo", type=Path, default=Path.cwd())
-    commands = parser.add_subparsers(dest="command", required=True)
-    add_plan_arguments(commands.add_parser("start"), series=True)
-    commands.add_parser("resume").add_argument("id", type=validate_id)
-    add_status_arguments(commands.add_parser("status"), validate_id)
-
-    args = parser.parse_args()
-    repo = Path(git(args.repo, "rev-parse", "--show-toplevel")).resolve()
-    if args.command == "start":
-        plan = read_plan(args, validate_series, repo=repo)
-        if args.dry_run:
-            print(json.dumps(plan, ensure_ascii=False, indent=2))
-            return
-    if args.command == "status":
-        show_execution(repo, "series", args.id, raw=args.json)
+@command(app)
+def start(
+    ctx: typer.Context,
+    plan: Plan = None,
+    step: Steps = [],
+    base: Base = None,
+    model: Model = None,
+    effort: EffortOption = None,
+    seconds: Annotated[
+        float | None, typer.Option("--seconds", help="Total budget in seconds.")
+    ] = None,
+    experiment_seconds: Annotated[
+        float | None,
+        typer.Option("--experiment-seconds", help="Budget per exploration."),
+    ] = None,
+    integration_seconds: Annotated[
+        float | None,
+        typer.Option("--integration-seconds", help="Budget for knowledge integration."),
+    ] = None,
+    reserve_seconds: Annotated[
+        float | None, typer.Option("--reserve-seconds", help="Preservation reserve.")
+    ] = None,
+    rounds: Annotated[
+        int | None,
+        typer.Option("--rounds", min=2, help="Finite number of repeated rounds."),
+    ] = None,
+    round_seconds: Annotated[
+        float | None, typer.Option("--round-seconds", help="Budget per round.")
+    ] = None,
+    dry_run: DryRun = False,
+    json: Json = False,
+):
+    """Start a finite series; --dry-run prints a reusable plan without execution."""
+    repo = repository(ctx)
+    resolved = usage(
+        read_plan,
+        "series",
+        plan=plan,
+        steps=step,
+        rounds=rounds,
+        overrides=supplied(
+            base=base,
+            model=model,
+            effort=effort,
+            seconds=seconds,
+            experiment_seconds=experiment_seconds,
+            integration_seconds=integration_seconds,
+            reserve_seconds=reserve_seconds,
+            round_seconds=round_seconds,
+        ),
+        repo=repo,
+    )
+    usage(validate_series, resolved)
+    if dry_run:
+        display.payload(resolved)
         return
+    if ctx.parent.info_name == "service":
+        with lock(repo):
+            directory = create_series(repo, resolved)
+            manage(repo, directory.name)
+        from mutagi.commands.status import show_service
 
-    def interrupted(*_):
-        raise KeyboardInterrupt("series interrupted")
-
-    signal.signal(signal.SIGTERM, interrupted)
+        if json:
+            show_service(repo, raw=True)
+        else:
+            show_service(repo)
+        return
+    interruptible("series")
     with lock(repo):
-        directory = (
-            create_series(repo, plan)
-            if args.command == "start"
-            else repo / ".mutagi/runs" / "series" / args.id
-        )
-        print("Series: " + directory.name, flush=True)
-        controller = Series(directory)
-        try:
-            result = controller.advance(recovery=args.command == "resume")
-        except (
-            OSError,
-            RuntimeError,
-            ValueError,
-            subprocess.SubprocessError,
-            KeyboardInterrupt,
-        ) as error:
-            controller.state["error"] = str(error)
-            controller.save()
-            print(
-                f"Incomplete: {error}\nresume series {directory.name}",
-                flush=True,
-            )
-            raise SystemExit(1) from error
+        directory = create_series(repo, resolved)
+        advance(repo, "series", Series(directory), recovery=False, machine=json)
 
-        print(json.dumps(result, ensure_ascii=False, indent=2))
+
+@command(app)
+def resume(ctx: typer.Context, id: Identifier, json: Json = False):
+    """Recover remaining work with the original plan and ownership."""
+    repo = repository(ctx)
+    interruptible("series")
+    with lock(repo):
+        controller = Series(repo / ".mutagi/runs/series" / id)
+        advance(repo, "series", controller, recovery=True, machine=json)
+
+
+@command(app)
+def status(
+    ctx: typer.Context, id: Identifier, json: Json = False, details: Details = False
+):
+    """Inspect the recorded progress and current child without starting work."""
+    show_execution(repository(ctx), "series", id, raw=json, details=details)

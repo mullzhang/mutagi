@@ -1,67 +1,107 @@
-"""Run independent CLI sessions and one knowledge integration within a bounded round."""
+"""Typed commands for finite round execution and its checkpoints."""
 
-from __future__ import annotations
+from typing import Annotated
 
-import argparse
-import json
-import signal
-import subprocess
-from pathlib import Path
+import typer
 
-from mutagi.commands.inputs import add_plan_arguments, read_plan
-from mutagi.commands.status import add_status_arguments, show_execution
+from mutagi.commands import display
+from mutagi.commands.common import (
+    Details,
+    EffortOption,
+    Identifier,
+    Json,
+    Model,
+    command,
+    configure,
+    group,
+    repository,
+    supplied,
+    usage,
+)
+from mutagi.commands.inputs import Base, DryRun, Plan, Steps, read_plan
+from mutagi.commands.runs import advance, interruptible
+from mutagi.commands.status import show_execution
 from mutagi.execution.plans import validate_round
 from mutagi.execution.round import Round, create_round
-from mutagi.execution.state import lock, validate_id
-from mutagi.project.repository import git
+from mutagi.execution.state import lock
+
+app = group(
+    "Run a finite round, then inspect progress or recover its saved checkpoints."
+)
+app.callback()(configure)
 
 
-def main():
-    parser = argparse.ArgumentParser(prog="mutagi round", description=__doc__)
-    parser.add_argument("--repo", type=Path, default=Path.cwd())
-    commands = parser.add_subparsers(dest="command", required=True)
-    add_plan_arguments(commands.add_parser("start"))
-    commands.add_parser("resume").add_argument("id", type=validate_id)
-    add_status_arguments(commands.add_parser("status"), validate_id)
-
-    args = parser.parse_args()
-    repo = Path(git(args.repo, "rev-parse", "--show-toplevel")).resolve()
-    if args.command == "start":
-        plan = read_plan(args, validate_round, repo=repo)
-        if args.dry_run:
-            print(json.dumps(plan, ensure_ascii=False, indent=2))
-            return
-    if args.command == "status":
-        show_execution(repo, "round", args.id, raw=args.json)
+@command(app)
+def start(
+    ctx: typer.Context,
+    plan: Plan = None,
+    step: Steps = [],
+    base: Base = None,
+    model: Model = None,
+    effort: EffortOption = None,
+    seconds: Annotated[
+        float | None, typer.Option("--seconds", help="Total budget in seconds.")
+    ] = None,
+    experiment_seconds: Annotated[
+        float | None,
+        typer.Option("--experiment-seconds", help="Budget per exploration."),
+    ] = None,
+    integration_seconds: Annotated[
+        float | None,
+        typer.Option("--integration-seconds", help="Budget for knowledge integration."),
+    ] = None,
+    reserve_seconds: Annotated[
+        float | None, typer.Option("--reserve-seconds", help="Preservation reserve.")
+    ] = None,
+    dry_run: DryRun = False,
+    json: Json = False,
+):
+    """Start a finite round; --dry-run prints a reusable plan without execution."""
+    repo = repository(ctx)
+    resolved = usage(
+        read_plan,
+        "round",
+        plan=plan,
+        steps=step,
+        rounds=None,
+        overrides=supplied(
+            base=base,
+            model=model,
+            effort=effort,
+            seconds=seconds,
+            experiment_seconds=experiment_seconds,
+            integration_seconds=integration_seconds,
+            reserve_seconds=reserve_seconds,
+        ),
+        repo=repo,
+    )
+    usage(validate_round, resolved)
+    if dry_run:
+        display.payload(resolved)
         return
-
-    def interrupted(*_):
-        raise KeyboardInterrupt("round interrupted")
-
-    signal.signal(signal.SIGTERM, interrupted)
+    interruptible("round")
     with lock(repo):
-        directory = (
-            create_round(repo, plan)
-            if args.command == "start"
-            else repo / ".mutagi/runs" / "rounds" / args.id
-        )
-        print("Round: " + directory.name, flush=True)
-        controller = Round(directory)
+        directory = create_round(repo, resolved)
+        advance(repo, "round", Round(directory), recovery=False, machine=json)
+
+
+@command(app)
+def resume(ctx: typer.Context, id: Identifier, json: Json = False):
+    """Recover remaining work with the original plan and ownership."""
+    repo = repository(ctx)
+    interruptible("round")
+    with lock(repo):
+        controller = Round(repo / ".mutagi/runs/rounds" / id)
         if controller.state.get("series_id") is not None:
-            raise RuntimeError("use mutagi series resume for a round owned by a series")
+            raise RuntimeError(
+                "Use mutagi series resume for a round owned by a series."
+            )
+        advance(repo, "round", controller, recovery=True, machine=json)
 
-        try:
-            result = controller.advance(recovery=args.command == "resume")
-        except (
-            OSError,
-            RuntimeError,
-            ValueError,
-            subprocess.SubprocessError,
-            KeyboardInterrupt,
-        ) as error:
-            controller.state["error"] = str(error)
-            controller.save()
-            print(f"Incomplete: {error}\nresume round {directory.name}", flush=True)
-            raise SystemExit(1) from error
 
-        print(json.dumps(result, ensure_ascii=False, indent=2))
+@command(app)
+def status(
+    ctx: typer.Context, id: Identifier, json: Json = False, details: Details = False
+):
+    """Inspect the recorded progress and current child without starting work."""
+    show_execution(repository(ctx), "round", id, raw=json, details=details)

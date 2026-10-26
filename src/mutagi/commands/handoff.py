@@ -1,30 +1,50 @@
-"""Preserve App results after the controller supplies an observed terminal state."""
+"""Verify supplied App observations and preserve their recorded results."""
 
-from __future__ import annotations
-
-import argparse
-import json
+import json as json_module
 from pathlib import Path
+from typing import Annotated
 
+import typer
+
+from mutagi.commands import display
+from mutagi.commands.common import Json
+from mutagi.commands.status import show_execution
 from mutagi.execution.handoff import accept
 from mutagi.execution.state import lock
 
 
-def main():
-    parser = argparse.ArgumentParser(prog="mutagi handoff", description=__doc__)
-    parser.add_argument("--run", type=Path, required=True)
-    parser.add_argument("--app-observation", type=Path, required=True)
-    args = parser.parse_args()
-    state = json.loads((args.run / "state.json").read_text())
-    with lock(Path(state["repo"])):
-        result = accept(args.run, json.loads(args.app_observation.read_text()))
-
-    print(
-        json.dumps(
+def handoff_result(
+    run: Annotated[
+        Path,
+        typer.Option(
+            "--run",
+            exists=True,
+            file_okay=False,
+            help="Recorded App execution directory.",
+        ),
+    ],
+    app_observation: Annotated[
+        Path,
+        typer.Option(
+            "--app-observation",
+            exists=True,
+            dir_okay=False,
+            help="Controller-confirmed terminal observation JSON.",
+        ),
+    ],
+    json: Json = False,
+):
+    state = json_module.loads((run / "state.json").read_text())
+    repo = Path(state["repo"])
+    with lock(repo):
+        result = accept(run, json_module.loads(app_observation.read_text()))
+    if json:
+        display.payload(
             {
                 key: result[key]
                 for key in ("id", "phase", "saved_commit", "registry_commit")
-            },
-            indent=2,
+            }
         )
-    )
+    else:
+        display.title("App result preserved")
+        show_execution(repo, "experiment", result["id"])

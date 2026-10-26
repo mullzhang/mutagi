@@ -10,12 +10,12 @@ It uses `runtime/process.py` to track the command and descendants, recovering th
 
 Specify the working directory and record directory explicitly.
 Use a persistent, experiment-specific record directory; do not reuse an existing directory.
-Arguments after `--command` are an executable and argument list, not a shell string.
+Arguments after `--` are an executable and argument list, not a shell string.
 
 ```bash
 mutagi job start /absolute/path/to/job-record \
   --cwd /absolute/path/to/experiment --seconds 60 \
-  --command python3 experiment.py
+  -- python3 experiment.py
 mutagi job status /absolute/path/to/job-record
 ```
 
@@ -31,7 +31,7 @@ The supervisor detaches from the launcher's standard streams and writes to `supe
 | `stop-requested` | Persistent explicit stop request; repeated calls do not cancel it |
 | `lock` | Lock preventing concurrent supervision and recovery of the same record |
 
-`status` displays the saved stage, command and log paths, recorded exit result, current process observations, and next action.
+`status` displays the saved stage, recorded exit result, current process observations, and next action. Add `--details` for the command, working directory, deadline, and log paths.
 Use `status --json` to read the original saved state without live process measurements; see [status output](status.md).
 Confirm completion with `stage=finished` and `process=null`; distinguish `result.exit_code`, `timed_out`, and `cancelled`.
 `finished` does not imply success: the exit code may be nonzero.

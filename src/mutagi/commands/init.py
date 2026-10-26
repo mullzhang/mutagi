@@ -1,11 +1,16 @@
 """Generate reviewable exploration settings in an existing Git repository."""
 
-from __future__ import annotations
-
-import argparse
 import shlex
 import sys
 from pathlib import Path
+from types import SimpleNamespace
+from enum import Enum
+from typing import Annotated
+
+import typer
+
+from mutagi.commands import display
+from mutagi.commands.common import Effort, Json, Repo
 
 from mutagi.project.config import validate_path
 from mutagi.project.initialize import PRESETS, initialize
@@ -55,45 +60,64 @@ def interactive_options(args):
         )
 
 
-def main():
-    parser = argparse.ArgumentParser(prog="mutagi init", description=__doc__)
-    parser.add_argument(
-        "--repo",
-        type=Path,
-        default=Path.cwd(),
-        help="Git repository root (default: current directory)",
+Preset = Enum("Preset", {name.replace("-", "_"): name for name in PRESETS}, type=str)
+
+
+def initialize_project(
+    repo: Repo = Path("."),
+    name: Annotated[
+        str | None, typer.Option("--name", help="Project display name.")
+    ] = None,
+    explore_path: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--explore-path", help="Additional writable application path; repeatable."
+        ),
+    ] = None,
+    reference: Annotated[
+        list[str] | None,
+        typer.Option("--reference", help="Existing reference file; repeatable."),
+    ] = None,
+    preset: Annotated[
+        Preset | None,
+        typer.Option("--preset", help="Explicit preparation command set."),
+    ] = None,
+    model: Annotated[
+        str | None,
+        typer.Option("--model", help="Save this explicitly selected default model."),
+    ] = None,
+    effort: Annotated[
+        Effort | None,
+        typer.Option("--effort", help="Save this default reasoning effort."),
+    ] = None,
+    interactive: Annotated[
+        bool,
+        typer.Option(
+            "--interactive",
+            help="Choose omitted settings, preview, and confirm writing.",
+        ),
+    ] = False,
+    dry_run: Annotated[
+        bool,
+        typer.Option("--dry-run", help="Preview generated contents without writing."),
+    ] = False,
+    json: Json = False,
+):
+    args = SimpleNamespace(
+        repo=repo,
+        name=name,
+        explore_path=explore_path,
+        reference=reference,
+        preset=preset.value if preset is not None else None,
+        model=model,
+        effort=effort.value if effort is not None else None,
+        interactive=interactive,
+        dry_run=dry_run,
     )
-    parser.add_argument(
-        "--name", help="Project name (default: repository directory name)"
-    )
-    parser.add_argument(
-        "--explore-path",
-        action="append",
-        help="Additional application path the explorer may change; repeatable",
-    )
-    parser.add_argument(
-        "--reference",
-        action="append",
-        help="Existing project reference file; repeatable",
-    )
-    parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Print generated contents without writing files",
-    )
-    parser.add_argument(
-        "--preset", choices=PRESETS, help="Save an explicit preparation command set"
-    )
-    parser.add_argument("--model", help="Save this explicitly selected default model")
-    parser.add_argument(
-        "--effort", choices=EFFORTS, help="Save this default reasoning effort"
-    )
-    parser.add_argument(
-        "--interactive",
-        action="store_true",
-        help="Ask for omitted settings, preview files, and confirm before writing",
-    )
-    args = parser.parse_args()
+    if interactive and json:
+        raise typer.BadParameter(
+            "Use explicit options with --json; --interactive requires human output."
+        )
     try:
         if args.interactive:
             interactive_options(args)
@@ -110,7 +134,11 @@ def main():
             },
         }
         if args.interactive or args.dry_run:
-            show_initialization(initialize(**options, dry_run=True), dry_run=True)
+            preview = initialize(**options, dry_run=True)
+            if json and args.dry_run:
+                display.payload(preview)
+                return
+            show_initialization(preview, repo=args.repo.resolve(), dry_run=True)
             if args.dry_run:
                 return
             if input("Write these project files? [y/N]: ").strip().lower() not in (
@@ -119,13 +147,17 @@ def main():
             ):
                 print("Initialization cancelled; no files were changed.")
                 return
-        show_initialization(initialize(**options))
+        result = initialize(**options)
+        if json:
+            display.payload(result)
+        else:
+            show_initialization(result, repo=args.repo.resolve())
     except (EOFError, KeyboardInterrupt):
         print("\nInitialization cancelled; input was interrupted.", file=sys.stderr)
         raise SystemExit(1) from None
 
 
-def show_initialization(result, *, dry_run=False):
+def show_initialization(result, *, repo, dry_run=False):
     content = result["files"]
     suffix = result["ignore_additions"]
     project = result["project"]
@@ -134,8 +166,15 @@ def show_initialization(result, *, dry_run=False):
             print(f"--- {path} ---\n{text}", end="" if text.endswith("\n") else "\n")
         print("--- .gitignore additions ---\n" + suffix, end="")
         return
-    for name in content:
-        print("Created " + name)
+    display.title("Project configured")
+    display.fields(
+        [
+            ("Created files", len(content)),
+            ("Project", project["name"]),
+            ("Writable scope", ", ".join(project["exploration_paths"])),
+        ]
+    )
+    display.table(["File", "Result"], [(name, "created") for name in content])
     if suffix:
         print("Updated .gitignore")
     print(
@@ -143,10 +182,13 @@ def show_initialization(result, *, dry_run=False):
         + ", ".join(project["exploration_paths"])
         + "; each experiment may also write its own directory."
     )
-    print("Review the generated settings and project prompts, then run:")
-    print("  git add -- " + shlex.join([*content, ".gitignore"]))
-    print('  git commit -m "chore: configure mutagi exploration"')
-    print("  mutagi check")
+    display.note("Review generated settings and project prompts before starting work.")
+    display.next_steps(
+        *(["cd " + shlex.quote(str(repo))] if Path.cwd().resolve() != repo else []),
+        "git add -- " + shlex.join([*content, ".gitignore"]),
+        'git commit -m "chore: configure mutagi exploration"',
+        "mutagi check",
+    )
     print(
         "Choose an available model and use mutagi experiment start --help to start an exploration."
     )

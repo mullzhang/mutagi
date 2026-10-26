@@ -1,67 +1,112 @@
-"""Recover explicitly managed series after a process restart or login."""
+"""Typer service controls; recorded launchd and tick invocations stay unchanged."""
 
-from __future__ import annotations
-
-import argparse
-import json
 import signal
 from pathlib import Path
 
-from mutagi.commands.inputs import add_plan_arguments, read_plan
+import typer
+
+from mutagi.commands import display
+from mutagi.commands.common import (
+    Details,
+    Identifier,
+    Json,
+    Repo,
+    command,
+    configure,
+    group,
+    invocation,
+    repository,
+)
+from mutagi.commands.series import start
 from mutagi.commands.status import show_service
-from mutagi.execution.plans import validate_series
-from mutagi.execution.series import create_series
-from mutagi.execution.service import HostShutdown, manage, request_pause, tick
-from mutagi.execution.state import lock, validate_id
-from mutagi.project.repository import git
-from mutagi.runtime.launchd import install, uninstall
+from mutagi.execution.service import (
+    HostShutdown,
+    manage,
+    request_pause,
+    tick as service_tick,
+)
+from mutagi.execution.state import lock
+from mutagi.runtime.launchd import (
+    install as install_agent,
+    uninstall as uninstall_agent,
+)
+
+app = group(
+    "Manage recovery of an explicitly assigned series. Status does not imply launchd is running."
+)
 
 
-def main():
-    parser = argparse.ArgumentParser(prog="mutagi service", description=__doc__)
-    parser.add_argument("--repo", type=Path, default=Path.cwd())
-    commands = parser.add_subparsers(dest="command", required=True)
-    commands.add_parser("install")
-    commands.add_parser("uninstall")
-    commands.add_parser("tick")
-    commands.add_parser("status").add_argument(
-        "--json", action="store_true", help="Print the saved service state JSON"
-    )
-    add_plan_arguments(commands.add_parser("start"), series=True)
-    commands.add_parser("manage").add_argument("id", type=validate_id)
-    commands.add_parser("pause")
-    args = parser.parse_args()
-    repo = Path(git(args.repo, "rev-parse", "--show-toplevel")).resolve()
+@app.callback()
+def configure_service(ctx: typer.Context, repo: Repo = Path(".")):
+    configure(ctx, repo)
 
     def shutdown(*_):
         raise HostShutdown()
 
     signal.signal(signal.SIGTERM, shutdown)
-    if args.command == "install":
-        print(json.dumps(install(repo)))
-    elif args.command == "tick":
-        try:
-            tick(repo)
-        except HostShutdown:
-            return
-    elif args.command == "status":
-        show_service(repo, raw=args.json)
-    elif args.command == "pause":
-        request_pause(repo)
-        print(
-            "Pause requested. The active task will be preserved before any further work starts."
-        )
-    elif args.command == "uninstall":
-        uninstall(repo)
+
+
+app.command(
+    "start", help="Create a finite series and assign it to recovery management."
+)(start)
+
+
+@command(app)
+def install(ctx: typer.Context, json: Json = False):
+    """Install the current Python invocation as a macOS LaunchAgent."""
+    repo = repository(ctx)
+    result = install_agent(repo)
+    if json:
+        display.payload(result)
     else:
-        if args.command == "start":
-            plan = read_plan(args, validate_series, repo=repo)
-            if args.dry_run:
-                print(json.dumps(plan, ensure_ascii=False, indent=2))
-                return
-        with lock(repo):
-            identifier = (
-                create_series(repo, plan).name if args.command == "start" else args.id
-            )
-            manage(repo, identifier)
-            print(identifier)
+        display.title("Service installation configured")
+        display.fields(list(result.items()))
+        display.next_steps(invocation(repo, "service", "status"))
+
+
+@command(app)
+def uninstall(ctx: typer.Context, json: Json = False):
+    """Remove the registered LaunchAgent without changing saved execution records."""
+    uninstall_agent(repository(ctx))
+    if json:
+        display.payload({"uninstalled": True})
+    else:
+        display.title("Service registration removed")
+        display.note("Saved series and execution records are retained.")
+
+
+@command(app, "manage")
+def manage_series(ctx: typer.Context, id: Identifier, json: Json = False):
+    """Assign an existing series to automatic recovery."""
+    repo = repository(ctx)
+    with lock(repo):
+        manage(repo, id)
+    show_service(repo, raw=json)
+
+
+@command(app)
+def pause(ctx: typer.Context, json: Json = False):
+    """Request preservation before the service starts further work."""
+    repo = repository(ctx)
+    request_pause(repo)
+    if json:
+        display.payload({"pause_requested": True})
+    else:
+        display.title("Pause requested")
+        display.note("The active task will be preserved before further work starts.")
+        display.next_steps(invocation(repo, "service", "status"))
+
+
+@command(app)
+def status(ctx: typer.Context, json: Json = False, details: Details = False):
+    """Inspect the management checkpoint without changing it."""
+    show_service(repository(ctx), raw=json, details=details)
+
+
+@command(app)
+def tick(ctx: typer.Context):
+    """Perform one assigned recovery tick (also used by LaunchAgents)."""
+    try:
+        service_tick(repository(ctx))
+    except HostShutdown:
+        return

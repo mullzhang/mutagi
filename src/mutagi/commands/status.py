@@ -17,13 +17,8 @@ from mutagi.execution.state import (
     state_path,
 )
 from mutagi.runtime.process import boot_identity, processes
-
-
-def add_status_arguments(parser, validate_id):
-    parser.add_argument("id", type=validate_id)
-    parser.add_argument(
-        "--json", action="store_true", help="Print the original saved state JSON"
-    )
+from mutagi.commands import display
+from mutagi.commands.common import invocation
 
 
 def observed_processes(state):
@@ -168,18 +163,50 @@ def execution_summary(repo, kind, state):
     return lines
 
 
-def show_execution(repo, kind, identifier, *, raw=False):
+def show_execution(repo, kind, identifier, *, raw=False, details=False):
     path = state_path(repo, kind, identifier)
     if raw:
-        print(path.read_text(), end="")
+        display.text_payload(path.read_text())
         return
     state = load_state(path)
     lines = execution_summary(repo, kind, state)
-    lines.append("State file: " + str(path))
-    if kind == "experiment":
-        lines.append("Catalog: " + str(repo / state["project"]["catalog"]))
-    lines.append(
-        "Human adoption: not tracked by execution; use mutagi harvest show <experiment-UUID> to review harvesting notes."
+    display.title(f"{kind.capitalize()} · {state['phase']} · {identifier[:8]}")
+    primary = (
+        "Recorded phase:",
+        "Recorded progress:",
+        "Observed now:",
+        "Reported observation:",
+        "Saved revision:",
+        "Knowledge publication:",
+        "Last recorded error:",
+        "Recorded exit reason:",
+    )
+    display.fields([line.split(": ", 1) for line in lines if line.startswith(primary)])
+    if "Current child details:" in lines:
+        current = lines[lines.index("Current child details:") + 1 :]
+        display.title("Current child")
+        display.fields(
+            [
+                line.strip().split(": ", 1)
+                for line in current
+                if line.startswith(tuple("  " + label for label in primary))
+            ]
+        )
+    for label in ("Reported summary:", "Reported limitations:"):
+        for line in lines:
+            if line.startswith(label):
+                display.fields(
+                    [
+                        (
+                            label[:-1] + (" excerpt" if not details else ""),
+                            line.split(": ", 1)[1]
+                            if details
+                            else display.excerpt(line.split(": ", 1)[1]),
+                        )
+                    ]
+                )
+    display.note(
+        "Human adoption: not tracked by execution. Preservation does not establish independent reproduction or adoption."
     )
     terminal = {
         "experiment": EXPERIMENT_TERMINAL,
@@ -187,82 +214,105 @@ def show_execution(repo, kind, identifier, *, raw=False):
         "series": SERIES_TERMINAL,
     }[kind]
     if state["phase"] in terminal:
-        lines.append(
-            "Next: use mutagi harvest list to find saved results, then inspect their records and knowledge."
-        )
+        display.next_steps(invocation(repo, "harvest", "list"))
     elif kind == "experiment" and (
         state["phase"] == "awaiting_app" or "app_observation" in state
     ):
-        lines.append("Assigned App thread: " + str(state["thread_id"]))
-        lines.append(
-            "Next: the controller must confirm the assigned App turn and supply its observation to "
-            + shlex.join(["mutagi", "handoff", "--run", str(path.parent)])
+        if state.get("thread_id"):
+            display.fields([("Assigned App thread", state["thread_id"])])
+        display.note(
+            "Waiting for controller-confirmed App completion; this is not a live App query."
+        )
+        display.next_steps(
+            shlex.join(["mutagi", "handoff", "--run", str(path.parent)])
             + " --app-observation <verified-observation.json>"
         )
     else:
         owner_kind, owner_id = resume_owner(repo, kind, state)
-        command = shlex.join(
-            ["mutagi", owner_kind, "--repo", str(repo), "resume", owner_id]
+        display.note(
+            "If the controller or service is still running, follow its status. Resume only after it has stopped."
         )
-        lines.append("Next, if the controller has stopped: " + command)
-        lines.append(
-            "If a controller or service is still running, follow its status before manual recovery."
+        display.next_steps(invocation(repo, owner_kind, "resume", owner_id))
+    if details:
+        display.title("Supporting checkpoints and references")
+        for line in lines:
+            display.console().print(line)
+        display.fields([("State file", path)])
+    else:
+        display.note(
+            "More: --details for checkpoints and references; --json for the saved state."
         )
-    print("\n".join(lines))
 
 
-def show_service(repo, *, raw=False):
+def show_service(repo, *, raw=False, details=False):
     path = repo / ".mutagi/runs/service.json"
     if raw:
-        print(path.read_text() if path.exists() else '{"phase":"unassigned"}', end="\n")
+        display.text_payload(
+            path.read_text() if path.exists() else '{"phase":"unassigned"}\n'
+        )
         return
     if not path.exists():
-        print(
-            "Service: unassigned\nNext: start or manage a series with mutagi service."
+        display.title("Service · unassigned")
+        display.next_steps(
+            invocation(repo, "service", "start") + " --help",
+            invocation(repo, "service", "manage") + " <series-UUID>",
         )
         return
     state = load_state(path)
-    print(
-        f"Service recorded phase: {state['phase']}\nManaged series: {state['id']}\nEnabled: {state['enabled']}\nRecovery attempts: {state['attempts']}\nLast checkpoint: {state['updated_at']}"
+    display.title("Service · " + state["phase"])
+    display.fields(
+        [
+            ("Managed series", state["id"] if details else state["id"][:8]),
+            ("Enabled", state["enabled"]),
+            ("Recovery attempts", state["attempts"]),
+            ("Pause requested", (repo / ".mutagi/runs/service.pause").exists()),
+        ]
     )
-    print(
-        "Pause requested: "
-        + ("yes" if (repo / ".mutagi/runs/service.pause").exists() else "no")
-    )
+    if details:
+        display.fields([("Last checkpoint", state["updated_at"])])
     if state.get("error"):
-        print("Last recorded error: " + state["error"])
-    print(
-        "The service checkpoint does not prove that launchd or the controller is currently running."
-    )
-    show_execution(repo, "series", state["id"])
+        display.note("Last recorded error: " + state["error"])
+    display.note("This checkpoint does not prove launchd or its controller is running.")
+    show_execution(repo, "series", state["id"], details=details)
 
 
-def show_job(directory, state):
-    lines = [
-        "Job: " + state["id"],
-        "Recorded stage: " + state["stage"],
-        "Command: " + shlex.join(state["command"]),
-        "Working directory: " + state["cwd"],
-        deadline_line(state),
-        "Observed now: " + observed_processes(state),
-        "Supervisor observed now: "
-        + ("present" if state["supervisor_alive"] else "absent"),
-        "Command log: " + str(directory / "command.log"),
-        "State file: " + str(directory / "state.json"),
+def show_job(directory, state, *, details=False):
+    display.title("Job · " + state["stage"] + " · " + state["id"][:8])
+    items = [
+        ("Recorded stage", state["stage"]),
+        ("Observed now", observed_processes(state)),
+        (
+            "Supervisor observed now",
+            "present" if state["supervisor_alive"] else "absent",
+        ),
     ]
     if state["result"] is not None:
-        lines.append("Recorded result: " + json.dumps(state["result"], sort_keys=True))
+        items.append(
+            ("Recorded exit result", json.dumps(state["result"], sort_keys=True))
+        )
     if state.get("error"):
-        lines.append("Last recorded error: " + state["error"])
+        items.append(("Last recorded error", state["error"]))
+    display.fields(items)
     if state["stage"] in ("finished", "recovered"):
-        lines.append("Next: inspect the command log and recorded exit result.")
+        display.next_steps("Inspect " + str(directory / "command.log"))
     elif state["supervisor_alive"]:
-        lines.append(
-            "Next: wait, or request a stop with "
-            + shlex.join(["mutagi", "job", "stop", str(directory)])
+        display.next_steps(
+            shlex.join(["mutagi", "job", "status", str(directory)]),
+            shlex.join(["mutagi", "job", "stop", str(directory)]),
         )
     else:
-        lines.append(
-            "Next: " + shlex.join(["mutagi", "job", "recover", str(directory)])
+        display.next_steps(shlex.join(["mutagi", "job", "recover", str(directory)]))
+    if details:
+        display.fields(
+            [
+                ("Command", shlex.join(state["command"])),
+                ("Working directory", state["cwd"]),
+                ("Deadline", deadline_line(state)),
+                ("Command log", directory / "command.log"),
+                ("State file", directory / "state.json"),
+            ]
         )
-    print("\n".join(lines))
+    else:
+        display.note(
+            "More: --details for command, deadline and log paths; --json for the saved state."
+        )

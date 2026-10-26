@@ -7,7 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from mutagi.commands.harvest import main
+from mutagi.commands import harvest as harvest_command
+from tests.support.cli import invoke as invoke_cli
 from mutagi.project.repository import git
 from tests.support.harvest import PART, preserve_experiment
 from tests.support.repositories import snapshot
@@ -17,7 +18,7 @@ def invoke(monkeypatch, repo, *arguments):
     monkeypatch.setattr(
         sys, "argv", ["mutagi harvest", "--repo", str(repo), *arguments]
     )
-    main()
+    invoke_cli(harvest_command)
 
 
 def test_list_searches_findings_and_limits_without_requiring_a_model(
@@ -31,7 +32,8 @@ def test_list_searches_findings_and_limits_without_requiring_a_model(
     for query in ("repeated requests", "日本語"):
         invoke(monkeypatch, repo, "list", "--search", query)
         output = capsys.readouterr().out
-        assert preserved_experiment["id"] in output
+        assert preserved_experiment["id"][:8] in output
+        assert preserved_experiment["id"] not in output
         assert "mutagi harvest --repo" in output
     invoke(monkeypatch, repo, "list", "--search", "unmatched")
     assert "No registered results match" in capsys.readouterr().out
@@ -44,7 +46,7 @@ def test_list_includes_refuted_results_and_empty_catalogs(repo, monkeypatch, cap
     state = preserve_experiment(repo, status="refuted")
     invoke(monkeypatch, repo, "list")
     output = capsys.readouterr().out
-    assert state["id"] in output and "Reported observation: refuted" in output
+    assert state["id"][:8] in output and "refuted" in output
 
 
 def test_show_reads_saved_record_when_the_shared_tree_has_other_changes(
@@ -61,9 +63,16 @@ def test_show_reads_saved_record_when_the_shared_tree_has_other_changes(
     assert source["harvesting_records"] == []
     invoke(monkeypatch, repo, "show", preserved_experiment["id"])
     output = capsys.readouterr().out
-    assert "## Reproduction and preservation" in output
-    assert "Changes from base:" in output
-    assert "Trial: mutagi harvest" in output
+    assert "## Reproduction and preservation" not in output
+    assert "Findings excerpt" in output and "Limits excerpt" in output
+    assert "mutagi harvest --repo" in output and "checkout" in output
+    invoke(monkeypatch, repo, "show", preserved_experiment["id"][:8], "--record")
+    assert capsys.readouterr().out == source["record_text"]
+    invoke(monkeypatch, repo, "show", preserved_experiment["id"][:8], "--details")
+    output = capsys.readouterr().out
+    assert "Supporting evidence and references" in output
+    assert "Record path" in output and "Synthetic fixture" in output
+    assert output.index("Next") < output.index("Supporting evidence")
     assert snapshot(repo) == before
 
 
@@ -82,7 +91,7 @@ def test_unmarked_historical_references_are_reported_without_polluting_json(
     (entry,) = json.loads(output.out)
     assert entry["id"] == preserved_experiment["id"]
     assert entry["catalog_has_unmarked_references"]
-    assert "unmarked historical saved-record references" in output.err
+    assert "unmarked saved-record references" in output.err
 
 
 def test_show_preserves_existing_free_form_catalog_decisions(
@@ -101,10 +110,9 @@ def test_show_preserves_existing_free_form_catalog_decisions(
     git(repo, "commit", "-m", "test: retain an existing manual decision")
     invoke(monkeypatch, repo, "show", preserved_experiment["id"])
     output = capsys.readouterr().out
-    assert (
-        "Original catalog decision text: Adopted one idea; see design review." in output
-    )
-    assert "No separate harvesting notes." in output
+    assert "Catalog decision excerpt" in output
+    assert "Adopted one idea; see design review." in output
+    assert "Scoped harvesting notes" in output
     assert "human adoption are unverified" not in output
 
 
@@ -152,9 +160,11 @@ def test_prepare_creates_utf8_output_equal_to_stdout_and_never_overwrites(
     output = tmp_path / "prompt.md"
     invoke(monkeypatch, repo, *args, "--output", str(output))
     assert output.read_text(encoding="utf-8") == prompt
-    assert "Prompt file:" in capsys.readouterr().out
-    with pytest.raises(FileExistsError):
+    assert "Prompt saved" in capsys.readouterr().out
+    with pytest.raises(SystemExit) as error:
         invoke(monkeypatch, repo, *args, "--output", str(output))
+    assert error.value.code == 1
+    assert "File exists" in capsys.readouterr().err
     assert output.read_text() == prompt
 
 
@@ -188,10 +198,10 @@ def test_record_uses_experiment_id_and_preserves_exact_note(
     assert json.loads(capsys.readouterr().out)["harvesting_records"] == [
         saved["record"]
     ]
-    invoke(monkeypatch, repo, "show", preserved_experiment["id"])
+    invoke(monkeypatch, repo, "show", preserved_experiment["id"], "--details")
     human = capsys.readouterr().out
     assert "adopt (idea)" in human
-    assert "Verification reported: not recorded" in human
+    assert "Verification reported" in human and "Not recorded" in human
     assert "利用先では未検証。" in human
     invoke(monkeypatch, repo, "list", "--json")
     assert json.loads(capsys.readouterr().out)[0]["harvesting_records"] == [

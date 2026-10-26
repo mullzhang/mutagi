@@ -2,6 +2,7 @@
 
 ## 0.2.0 (unreleased)
 
+- Define all public commands with Typer and share Rich human displays, with concise defaults, explicit details, typed input errors, and clean JSON, prompt, template, record, and diff output. Ordered tasks now use repeatable `--step 'PARENT: TEXT'`; job commands follow `--`. Harvest actions accept unique experiment prefixes of at least eight characters.
 - Read the committed Japanese controller and App catalog layouts used by naedo-forest, preserving fixed references, verification actors, and adoption statements. Reject incomplete or conflicting registrations and explicitly report older unmarked references.
 - Add `mutagi harvest list`, `show`, `checkout`, `prepare`, and `record` for finding fixed results, preparing trials, printing or saving destination prompts, and versioning selective adoption notes on a separate branch without starting an agent.
 - Fill experiment record identity from saved execution state before prompting the explorer. Validate unique fields in the opening frontmatter and report mismatched values without rewriting the original record.

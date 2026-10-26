@@ -5,6 +5,8 @@ import json
 import sys
 import time
 
+from tests.support.cli import invoke
+
 import pytest
 
 import mutagi.commands.experiment as experiment_command
@@ -378,7 +380,7 @@ def test_preservation_failure_blocks_all_later_rounds_until_resume(
 
 @pytest.mark.parametrize("entrypoint", ["round", "experiment"])
 def test_owned_child_cannot_be_resumed_through_standalone_cli(
-    series_case, monkeypatch, entrypoint
+    series_case, monkeypatch, entrypoint, capsys
 ):
     # Given a child owned by a series controller.
     repo, directory, calls = series_case
@@ -393,8 +395,10 @@ def test_owned_child_cannot_be_resumed_through_standalone_cli(
         sys, "argv", ["runner", "--repo", str(repo), "resume", identifier]
     )
     # When a standalone CLI is asked to resume that child.
-    with pytest.raises(RuntimeError, match="mutagi series resume"):
-        module.main()
+    with pytest.raises(SystemExit) as error:
+        invoke(module)
+    assert error.value.code == 1
+    assert "mutagi series resume" in capsys.readouterr().err
 
     # Then no model starts outside the owning series.
     assert not calls.exists()

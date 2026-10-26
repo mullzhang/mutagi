@@ -65,12 +65,12 @@ Stop grace periods and preservation work mean these are not strict finish-time g
 
 ## Repeat a task sequence with CLI arguments
 
-For repeated rounds with the same task pattern, specify `--rounds N` and ordered `--prompt TEXT` or `--inherit INDEX TEXT` options:
+For repeated rounds with the same task pattern, specify `--rounds N` and ordered `--step 'PARENT: TEXT'` options:
 
 ```bash
 mutagi series start --base HEAD --rounds 2 \
-  --prompt "Read the integrated knowledge and test one concrete assumption." \
-  --inherit 0 "Test a new boundary made visible by the first result." \
+  --step "none: Read the integrated knowledge and test one concrete assumption." \
+  --step "0: Test a new boundary made visible by the first result." \
   --model "$MODEL" --effort medium \
   --seconds 4800 --round-seconds 2400 --experiment-seconds 900 \
   --integration-seconds 600 --reserve-seconds 120
@@ -78,7 +78,7 @@ mutagi series start --base HEAD --rounds 2 \
 
 At least two rounds are required. Each round receives its own copy of the ordered task sequence; parent indices are local to that round.
 Knowledge is handed off through the existing verified publication mechanism between rounds.
-`--rounds`, `--prompt`, and `--inherit` cannot be combined with `--plan`.
+`--rounds` and `--step` cannot be combined with `--plan`.
 Use JSON plans for different task patterns per round, adaptation policy, or usage limits.
 CLI task construction does not enable adaptation or infer prices.
 

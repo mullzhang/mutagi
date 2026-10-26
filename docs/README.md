@@ -37,5 +37,6 @@ For a complete project to copy, use the [runnable example](../examples/README.md
 
 ## Development
 
+- [Common CLI display design](development/cli-display-design.md): human output, explicit detail, typed inputs, stream contracts, and examples.
 - [Source and test structure](development/architecture.md): package responsibilities, recovery boundaries, shared fixtures, and checks.
 - [Distribution verification and releases](development/releases.md): validate package artifacts and Git-source updates, then publish a version tag.

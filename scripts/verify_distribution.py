@@ -143,7 +143,7 @@ def verify_workers(python, executable, codex, env, project, method):
             AUDIT,
             "--seconds",
             "20",
-            "--command",
+            "--",
             python,
             "-I",
             "-c",
@@ -244,6 +244,8 @@ def verify_install(artifact, method):
         ["service"],
         ["handoff"],
         ["job"],
+        ["harvest"],
+        ["template"],
     ]:
         run([executable, *command, "--help"], AUDIT, env)
     assert run([executable, "--version"], AUDIT, env).strip() == "mutagi " + VERSION
@@ -284,8 +286,8 @@ def verify_install(artifact, method):
     )
     assert not (project / ".mutagi/plans").exists()
     commit(project)
-    checks = run([executable, "check"], project, env)
-    assert "BLOCKED" not in checks and "OK Committed project files" in checks
+    checks = json.loads(run([executable, "check", "--json"], project, env))
+    assert checks["ready"] and all(item["passed"] for item in checks["checks"])
     instruction = "Package-only exploration.\n日本語の指示も記録する。\n"
     source = ["--prompt", instruction] if method == "wheel" else ["--task", "-"]
     run(
@@ -409,11 +411,10 @@ def verify_install(artifact, method):
         flags = [
             "--base",
             "HEAD",
-            "--prompt",
-            "A finite synthetic case.",
-            "--inherit",
-            "0",
-            "Check the preserved result.",
+            "--step",
+            "none: A finite synthetic case.",
+            "--step",
+            "0: Check the preserved result.",
             "--seconds",
             "600",
             "--experiment-seconds",
@@ -456,9 +457,7 @@ def verify_install(artifact, method):
         assert len(completed) == 1 and completed[0]["phase"] == "completed", completed
         execution_ids[kind] = completed[0]["id"]
         output = run([executable, kind, "status", completed[0]["id"]], project, env)
-        assert (
-            "Recorded progress:" in output and "Human adoption: not tracked" in output
-        )
+        assert "Recorded progress" in output and "Human adoption: not tracked" in output
         assert (
             json.loads(
                 run(
@@ -469,7 +468,7 @@ def verify_install(artifact, method):
             )
             == completed[0]
         )
-    assert "Reported observation: observed" in run(
+    assert "Reported observation" in run(
         [executable, "experiment", "status", state["id"]], project, env
     )
     assert run(["git", "-C", project, "status", "--porcelain"], AUDIT).strip() == ""
@@ -559,17 +558,13 @@ run(
         "-I",
         "-c",
         """from pathlib import Path
-import argparse
-from mutagi.commands.inputs import add_plan_arguments, read_plan
+from mutagi.commands.inputs import read_plan
 from mutagi.execution.experiment import Runner, create
 from mutagi.execution.plans import validate_round, validate_series
 from mutagi.execution.state import lock
 root = Path.cwd()
 for kind, validate in [('round', validate_round), ('series', validate_series)]:
-    parser = argparse.ArgumentParser()
-    add_plan_arguments(parser, series=kind == 'series')
-    args = parser.parse_args(['--plan', str(root / '.mutagi/plans' / (kind + '.json')), '--model', 'synthetic-test-model'])
-    read_plan(args, validate)
+    validate(read_plan(kind, plan=str(root / '.mutagi/plans' / (kind + '.json')), steps=[], rounds=None, overrides={'model': 'synthetic-test-model'}))
 with lock(root):
     directory = create(root, 'HEAD', 'Prepare the copied example.', 'synthetic-test-model', 'medium', 60, 10)
 job = Runner(directory)

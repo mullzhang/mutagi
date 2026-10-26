@@ -4,6 +4,8 @@ import subprocess
 import sys
 from importlib.metadata import version
 
+from tests.support.cli import invoke
+
 
 def test_cli_version_and_check_exit_status(repo, diagnostic_codex, monkeypatch):
     version_output = subprocess.check_output(
@@ -15,7 +17,8 @@ def test_cli_version_and_check_exit_status(repo, diagnostic_codex, monkeypatch):
     monkeypatch.setenv("TEST_AUTH_STATUS", "1")
     result = subprocess.run(command, capture_output=True, text=True)
     assert result.returncode == 1
-    assert "BLOCKED Authentication" in result.stdout
+    assert "Authentication" in result.stdout and "BLOCKED" in result.stdout
+    assert not result.stderr
     assert "private-auth-output" not in result.stdout + result.stderr
 
 
@@ -73,7 +76,7 @@ def test_service_tick_exits_normally_after_saving_shutdown_checkpoint(
 
     monkeypatch.setattr(Series, "advance", shutdown)
     monkeypatch.setattr(sys, "argv", ["mutagi service", "--repo", str(repo), "tick"])
-    service_command.main()
+    invoke(service_command)
     checkpoint = json.loads(config_path(repo).read_text())
     assert checkpoint["phase"] == "recovery_pending"
     assert checkpoint["attempts"] == 1 and checkpoint["enabled"]

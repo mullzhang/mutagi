@@ -44,17 +44,6 @@ def source_graph():
                 child = imported + "." + symbol
                 if child in modules and child != name:
                     graph[name].add(child)
-    cli = ast.parse(modules["mutagi.cli"].read_text())
-    commands = next(
-        ast.literal_eval(node.value)
-        for node in cli.body
-        if isinstance(node, ast.Assign)
-        and any(
-            isinstance(target, ast.Name) and target.id == "COMMANDS"
-            for target in node.targets
-        )
-    )
-    graph["mutagi.cli"].update("mutagi." + target for target in commands.values())
     return graph
 
 

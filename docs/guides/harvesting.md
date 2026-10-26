@@ -15,8 +15,8 @@ Saved Git objects must be available, including after cloning; shallow clones may
 
 | Action | Behavior |
 | --- | --- |
-| `list [--search TEXT] [--json]` | List registrations, findings, limitations, and references to harvesting notes |
-| `show UUID [--json]` | Validate the saved observation identity and read its record, changed files, parents, and harvesting notes |
+| `list [--search TEXT] [--details\|--json]` | List compact references, questions, and reported observations; request full findings and references explicitly |
+| `show REF [--details\|--record\|--diff\|--json]` | Read findings and limits before next actions; explicitly open metadata, adoption notes, original records, or changes |
 | `checkout UUID [--json]` | Create or inspect a detached trial at the exact saved revision |
 | `prepare UUID --purpose TEXT` | Print a harvesting prompt to standard output |
 | `record UUID --decision adopt\|defer --note-file FILE` | Append a supplied decision and its evidence to the separate `mutagi/harvests` branch |
@@ -53,16 +53,23 @@ mutagi harvest list --search "cache"
 
 Search includes `observed`, `refuted`, `unresolved`, and `blocked` results.
 It does not rank scientific validity or infer suitability for a destination.
-The output includes a complete `show` command for each result, so the UUID can be copied without inventing a separate numbering system.
-Use the full lowercase experiment UUIDv4 for all actions.
-In the examples below, set `ID` to a selected experiment's UUID.
+The list shows a unique prefix for each experiment and one next-action example.
+Every harvest action accepts either the full lowercase experiment UUIDv4 or an unambiguous prefix of at least eight characters.
+A prefix shared by several experiments is rejected; use a longer prefix or the full UUID.
+JSON and detailed output retain full identifiers. Execution and recovery commands still require full IDs.
+In the examples below, set `ID` to a selected experiment's UUID or displayed prefix.
 
 ```bash
 mutagi harvest show "$ID"
 ```
 
 `show` checks the fixed record's identity, base, parents, reported outcome, and implementation ancestry against the catalog.
-The saved observation and its implementation commit are displayed separately.
+The default display shows literal findings, limits, and catalog decision excerpts, plus the number of scoped harvesting notes.
+Excerpts may be shortened; they do not reinterpret historical evidence or infer adoption.
+Next-action commands precede supporting evidence.
+Use `--details` for full findings and limitations, distinct saved/implementation revisions, verification actors, diff statistics, and separately recorded adoption notes.
+Use `--record` for the exact original observation record, `--diff` for the full saved changes, or `--json` for structured data.
+These output modes are mutually exclusive; raw records and diffs have no decorative prefix, wrapping, or color.
 Moving the exploration branch later does not change the selected saved revision.
 These structural checks do not independently reproduce observations.
 

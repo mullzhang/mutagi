@@ -1,14 +1,17 @@
 """Inspect execution prerequisites without starting work or changing the project."""
 
-from __future__ import annotations
-
-import argparse
 import os
 import shlex
 import subprocess
 import sys
 from importlib.metadata import version
 from pathlib import Path
+from typing import Annotated
+
+import typer
+
+from mutagi.commands import display
+from mutagi.commands.common import Details, Json, Repo, invocation
 
 from mutagi.execution.state import unfinished_executions
 from mutagi.project.repository import (
@@ -129,18 +132,59 @@ def inspect(repo, base):
     return results
 
 
-def main():
-    parser = argparse.ArgumentParser(prog="mutagi check", description=__doc__)
-    parser.add_argument("--repo", type=Path, default=Path.cwd())
-    parser.add_argument(
-        "--base", default="HEAD", help="Committed project revision (default: HEAD)"
-    )
-    args = parser.parse_args()
-    results = inspect(args.repo, args.base)
-    for name, passed, detail in results:
-        print(f"{'OK' if passed else 'BLOCKED'} {name}: {detail}")
-    print(
-        "This check does not run preparation, test model access, write Git state, or verify future network access."
-    )
-    if not all(passed for _, passed, _ in results):
-        raise SystemExit(1)
+def check_project(
+    repo: Repo = Path("."),
+    base: Annotated[
+        str, typer.Option("--base", help="Committed configuration revision.")
+    ] = "HEAD",
+    details: Details = False,
+    json: Json = False,
+):
+    results = inspect(repo, base)
+    passed = all(result[1] for result in results)
+    if json:
+        display.payload(
+            {
+                "ready": passed,
+                "checks": [
+                    {"name": name, "passed": ok, "detail": detail}
+                    for name, ok, detail in results
+                ],
+            }
+        )
+    else:
+        failed = [result for result in results if not result[1]]
+        display.title(
+            "Ready for work"
+            if passed
+            else f"Work cannot start · {len(failed)} "
+            + ("item needs attention" if len(failed) == 1 else "items need attention")
+        )
+        display.fields(
+            [
+                ("Repository", repo.resolve()),
+                ("Base", base),
+                ("Checks passed", f"{len(results) - len(failed)}/{len(results)}"),
+            ]
+        )
+        selected = results if details else failed
+        if selected:
+            display.table(
+                ["Check", "Result", "Detail"],
+                [
+                    (name, "OK" if ok else "BLOCKED", detail)
+                    for name, ok, detail in sorted(selected, key=lambda item: item[1])
+                ],
+            )
+        display.note(
+            "Preparation and model access have not been tested. This command does not change project or execution state."
+        )
+        check_command = invocation(repo.resolve(), "check", "--base", base)
+        display.next_steps(
+            "Resolve blocked items, then run: " + check_command
+            if failed
+            else invocation(repo.resolve(), "experiment", "start", "--help"),
+            check_command + " --details",
+        )
+    if not passed:
+        raise typer.Exit(1)

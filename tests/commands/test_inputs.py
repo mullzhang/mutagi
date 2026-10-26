@@ -4,6 +4,8 @@ import io
 import json
 import sys
 
+from tests.support.cli import invoke
+
 import pytest
 
 import mutagi.commands.check as check
@@ -11,35 +13,37 @@ import mutagi.commands.experiment as experiment_command
 import mutagi.commands.round as round_command
 import mutagi.commands.series as series_command
 import mutagi.execution.experiment as experiment
-import mutagi.execution.plans as plans
 import mutagi.execution.round as round_controller
 import mutagi.execution.series as series
-from mutagi.commands.inputs import read_plan
+from typer import BadParameter
+from typer.testing import CliRunner
+
+from mutagi.cli import app
+from mutagi.commands.inputs import Step, read_plan
 from mutagi.project.repository import git
 from tests.support.plans import plan_args, plan_for
 
 
-@pytest.mark.parametrize(
-    "kind,validate",
-    [("round", plans.validate_round), ("series", plans.validate_series)],
-)
-def test_cli_task_order_and_plan_round_trip(kind, validate, tmp_path):
-    parser, flags = plan_args(
+@pytest.mark.parametrize("kind", ["round", "series"])
+def test_cli_task_order_and_plan_round_trip(kind, repo, tmp_path):
+    runner = CliRunner()
+    flags = plan_args(
         kind,
-        "--prompt",
-        "first",
-        "--inherit",
-        "0",
-        "second",
-        "--prompt",
-        "third",
-        "--inherit",
-        "1",
-        "fourth",
+        "--step",
+        "none: first",
+        "--step",
+        "0: second",
+        "--step",
+        "none: third",
+        "--step",
+        "1: fourth",
     )
     if kind == "series":
         flags += ["--rounds", "2"]
-    plan = read_plan(parser.parse_args(flags), validate)
+    command = [kind, "--repo", str(repo), "start"]
+    result = runner.invoke(app, [*command, *flags, "--dry-run"])
+    assert result.exit_code == 0, result.output
+    plan = json.loads(result.stdout)
     tasks = plan["tasks"] if kind == "round" else plan["rounds"][0]["tasks"]
     assert [(task["prompt"], task["parent"]) for task in tasks] == [
         ("first", None),
@@ -49,54 +53,81 @@ def test_cli_task_order_and_plan_round_trip(kind, validate, tmp_path):
     ]
     path = tmp_path / "resolved.json"
     path.write_text(json.dumps(plan))
-    assert read_plan(parser.parse_args(["--plan", str(path)]), validate) == plan
-    # Reusing a parser must not retain tasks from an earlier parse.
-    _, again = plan_args(kind, "--prompt", "only")
+    result = runner.invoke(app, [*command, "--plan", str(path), "--dry-run"])
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout) == plan
+    again = plan_args(kind, "--step", "none: only")
     if kind == "series":
         again += ["--rounds", "2"]
-    another = read_plan(parser.parse_args(again), validate)
+    result = runner.invoke(app, [*command, *again, "--dry-run"])
+    assert result.exit_code == 0, result.output
+    another = json.loads(result.stdout)
     one = another["tasks"] if kind == "round" else another["rounds"][0]["tasks"]
     assert one == [{"prompt": "only", "parent": None}]
     if kind == "series":
+        another = read_plan(
+            "series", plan=None, steps=[Step("only", None)], rounds=2, overrides={}
+        )
         another["rounds"][0]["tasks"][0]["prompt"] = "changed"
         assert another["rounds"][1]["tasks"][0]["prompt"] == "only"
+    assert not (repo / ".mutagi/runs").exists()
 
 
 @pytest.mark.parametrize(
     "extra",
     [
-        ["--inherit", "0", "first"],
-        ["--prompt", "first", "--inherit", "1", "self"],
-        ["--prompt", "first", "--inherit", "-1", "negative"],
-        ["--prompt", " "],
+        ["--step", "0: first"],
+        ["--step", "none: first", "--step", "1: self"],
+        ["--step", "none: first", "--step", "-1: negative"],
+        ["--step", "none: "],
+        ["--step", "wrong"],
+        ["--step", "parent: text"],
     ],
 )
-def test_invalid_cli_tasks_are_rejected(extra):
-    parser, flags = plan_args("round", *extra)
-    with pytest.raises(ValueError, match="earlier parent"):
-        read_plan(parser.parse_args(flags), plans.validate_round)
+def test_invalid_cli_tasks_are_rejected(extra, repo):
+    result = CliRunner().invoke(
+        app,
+        [
+            "round",
+            "--repo",
+            str(repo),
+            "start",
+            *plan_args("round", *extra),
+            "--dry-run",
+        ],
+    )
+    assert result.exit_code == 2, result.output
+    assert not result.stdout and "Error" in result.stderr
+    assert not (repo / ".mutagi/runs").exists()
 
 
 @pytest.mark.parametrize(
-    "extra", [["--prompt", "x"], ["--inherit", "0", "x"], ["--rounds", "2"]]
+    "steps,rounds", [([Step("x", None)], None), ([Step("x", 0)], None), ([], 2)]
 )
-def test_plan_and_task_inputs_cannot_be_mixed(extra, tmp_path):
+def test_plan_and_task_inputs_cannot_be_mixed(steps, rounds, tmp_path):
     path = tmp_path / "plan.json"
     path.write_text(json.dumps(plan_for("series")))
-    parser, _ = plan_args("series")
     before = path.read_bytes()
     with pytest.raises(ValueError, match="cannot be combined"):
-        read_plan(
-            parser.parse_args(["--plan", str(path), *extra]), plans.validate_series
-        )
+        read_plan("series", plan=str(path), steps=steps, rounds=rounds, overrides={})
     assert path.read_bytes() == before
 
 
 @pytest.mark.parametrize("rounds", [[], ["--rounds", "0"], ["--rounds", "1"]])
-def test_series_requires_explicit_finite_round_count(rounds):
-    parser, flags = plan_args("series", "--prompt", "x", *rounds)
-    with pytest.raises(ValueError, match="at least two"):
-        read_plan(parser.parse_args(flags), plans.validate_series)
+def test_series_requires_explicit_finite_round_count(rounds, repo):
+    result = CliRunner().invoke(
+        app,
+        [
+            "series",
+            "--repo",
+            str(repo),
+            "start",
+            *plan_args("series", "--step", "none: x", *rounds),
+            "--dry-run",
+        ],
+    )
+    assert result.exit_code == 2, result.output
+    assert not (repo / ".mutagi/runs").exists()
 
 
 @pytest.mark.parametrize(
@@ -132,7 +163,7 @@ def test_plan_overrides_are_validated_and_saved_before_execution(
         ],
     )
     monkeypatch.setattr(controller, "advance", lambda self, recovery: self.state)
-    module.main()
+    invoke(module)
     states = list(
         (repo / ".mutagi/runs" / ("rounds" if kind == "round" else "series")).glob(
             "*/state.json"
@@ -159,8 +190,8 @@ def test_missing_model_fails_before_allocating_any_state(
     monkeypatch.setattr(
         sys, "argv", [f"mutagi {kind}", "--repo", str(repo), "start", "--plan", "-"]
     )
-    with pytest.raises(ValueError, match="schema"):
-        module.main()
+    with pytest.raises(BadParameter, match="schema"):
+        invoke(module)
     assert not (repo / ".mutagi/runs").exists()
 
 
@@ -196,8 +227,8 @@ def test_model_override_rejects_incompatible_usage_rates(repo, monkeypatch):
             "different-model",
         ],
     )
-    with pytest.raises(ValueError, match="rate card model"):
-        series_command.main()
+    with pytest.raises(BadParameter, match="rate card model"):
+        invoke(series_command)
     assert not (repo / ".mutagi/runs").exists()
 
 
@@ -238,7 +269,7 @@ def test_exploration_inputs_preserve_the_same_text(
         ],
     )
     monkeypatch.setattr(experiment.Runner, "advance", lambda self, recovery: self.state)
-    experiment_command.main()
+    invoke(experiment_command)
     saved = list((repo / ".mutagi/runs").glob("*/task.txt"))
     assert len(saved) == 1
     assert saved[0].read_bytes().decode("utf-8") == text
@@ -247,9 +278,9 @@ def test_exploration_inputs_preserve_the_same_text(
 @pytest.mark.parametrize(
     "instruction,exception",
     [
-        (["--prompt", " \n "], ValueError),
-        (["--task", "missing-task.txt"], FileNotFoundError),
-        (["--prompt", "text", "--task", "-"], SystemExit),
+        (["--prompt", " \n "], BadParameter),
+        (["--task", "missing-task.txt"], BadParameter),
+        (["--prompt", "text", "--task", "-"], BadParameter),
     ],
 )
 def test_invalid_instruction_does_not_allocate_state(
@@ -273,5 +304,5 @@ def test_invalid_instruction_does_not_allocate_state(
         ],
     )
     with pytest.raises(exception):
-        experiment_command.main()
+        invoke(experiment_command)
     assert not (repo / ".mutagi/runs").exists()

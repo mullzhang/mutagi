@@ -3,6 +3,8 @@ from __future__ import annotations
 import io
 import sys
 
+from tests.support.cli import invoke
+
 import pytest
 
 import mutagi.commands.init as init_command
@@ -30,7 +32,7 @@ def test_interactive_initialization_previews_and_respects_choice(
     monkeypatch.setattr(
         sys, "argv", ["mutagi init", "--repo", str(empty_repo), "--interactive"]
     )
-    init_command.main()
+    invoke(init_command)
     output = capsys.readouterr().out
     assert 'model = "selected-model"' in output
     assert "--- .mutagi/config.toml ---" in output
@@ -53,7 +55,7 @@ def test_interactive_dry_run_and_eof_leave_no_files(empty_repo, monkeypatch):
         "argv",
         ["mutagi init", "--repo", str(empty_repo), "--interactive", "--dry-run"],
     )
-    init_command.main()
+    invoke(init_command)
     assert snapshot(empty_repo) == before
 
     def eof(prompt):
@@ -61,18 +63,20 @@ def test_interactive_dry_run_and_eof_leave_no_files(empty_repo, monkeypatch):
 
     monkeypatch.setattr("builtins.input", eof)
     with pytest.raises(SystemExit):
-        init_command.main()
+        invoke(init_command)
     assert snapshot(empty_repo) == before
 
 
-def test_interactive_rejects_nonterminal_input(empty_repo, monkeypatch):
+def test_interactive_rejects_nonterminal_input(empty_repo, monkeypatch, capsys):
     before = snapshot(empty_repo)
     monkeypatch.setattr(sys, "stdin", io.StringIO())
     monkeypatch.setattr(
         sys, "argv", ["mutagi init", "--repo", str(empty_repo), "--interactive"]
     )
-    with pytest.raises(ValueError, match="requires a terminal"):
-        init_command.main()
+    with pytest.raises(SystemExit) as error:
+        invoke(init_command)
+    assert error.value.code == 1
+    assert "requires a terminal" in capsys.readouterr().err
     assert snapshot(empty_repo) == before
 
 
@@ -89,7 +93,7 @@ def test_init_dry_run_and_explicit_paths_preserve_existing_files(empty_repo, cap
         ["README.md"],
         dry_run=True,
     )
-    init_command.show_initialization(preview, dry_run=True)
+    init_command.show_initialization(preview, repo=empty_repo, dry_run=True)
     assert snapshot(empty_repo) == before
     assert ".mutagi/config.toml" in capsys.readouterr().out
     initialize(empty_repo, 'A "quoted" project', ["lib/", "tests/"], ["README.md"])

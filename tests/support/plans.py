@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-import argparse
-
-from mutagi.commands.inputs import add_plan_arguments
 
 LIMITS = {
     "max_tasks": 3,
@@ -65,8 +62,6 @@ def plan_for(kind):
 
 
 def plan_args(kind, *extra):
-    parser = argparse.ArgumentParser()
-    add_plan_arguments(parser, series=kind == "series")
     flags = [
         "--base",
         "HEAD",
@@ -85,4 +80,4 @@ def plan_args(kind, *extra):
     ]
     if kind == "series":
         flags += ["--round-seconds", "300"]
-    return parser, flags + list(extra)
+    return flags + list(extra)
