@@ -2,6 +2,7 @@
 
 A Python package for agents to investigate questions, develop results and knowledge, and help people harvest useful code, ideas, and counterexamples.
 See [exploration through harvesting](docs/concepts/exploration-and-harvesting.md) and the [harvesting guide](docs/guides/harvesting.md).
+Use `mutagi harvest list` to find saved results and `mutagi harvest prepare <UUID> --purpose TEXT` to print a prompt for their intended use, or add `--output FILE` to save it.
 Requires Python 3.12+, POSIX, Git, and an authenticated Codex CLI.
 
 ## Execution and usage limits

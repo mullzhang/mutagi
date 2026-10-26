@@ -323,6 +323,87 @@ def verify_install(artifact, method):
     assert "No model was called." in record
     assert run(["git", "-C", project, "status", "--porcelain"], AUDIT).strip() == ""
     assert "BLOCKED" not in run([executable, "check"], project, env)
+    # Exercise harvesting through the installed CLI, not source imports.
+    harvest_head = run(["git", "rev-parse", "HEAD"], project, env).strip()
+    listed = json.loads(run([executable, "harvest", "list", "--json"], project, env))
+    assert [entry["id"] for entry in listed] == [state["id"]]
+    trial = json.loads(
+        run([executable, "harvest", "checkout", state["id"], "--json"], project, env)
+    )
+    assert trial["saved_commit"] == state["saved_commit"]
+    assert Path(trial["record"]).is_file() and not trial["dirty"]
+    purpose = "Reuse only the verified parts. 日本語の収穫指示。"
+    prompt = run(
+        [
+            executable,
+            "harvest",
+            "prepare",
+            state["id"],
+            "--purpose",
+            purpose,
+            "--kind",
+            "idea",
+            "--part",
+            state["result"]["record"],
+        ],
+        project,
+        env,
+    )
+    assert prompt.startswith("Use a preserved exploration result")
+    assert purpose in prompt and state["saved_commit"] in prompt
+    assert "No model was called." in prompt
+    prompt_file = AUDIT / (method + "-harvest-prompt.md")
+    run(
+        [
+            executable,
+            "harvest",
+            "prepare",
+            state["id"],
+            "--purpose",
+            purpose,
+            "--kind",
+            "idea",
+            "--part",
+            state["result"]["record"],
+            "--output",
+            prompt_file,
+        ],
+        project,
+        env,
+    )
+    assert prompt_file.read_text() == prompt
+    review_file = AUDIT / (method + "-harvest-review.md")
+    review_file.write_text(
+        "Defer until destination verification.\nNo model was called.\n"
+    )
+    decision = json.loads(
+        run(
+            [
+                executable,
+                "harvest",
+                "record",
+                state["id"],
+                "--decision",
+                "defer",
+                "--kind",
+                "idea",
+                "--part",
+                state["result"]["record"],
+                "--note-file",
+                review_file,
+                "--json",
+            ],
+            project,
+            env,
+        )
+    )
+    assert decision["record"]["verification"] is None
+    shown = json.loads(
+        run([executable, "harvest", "show", state["id"], "--json"], project, env)
+    )
+    assert shown["harvesting_records"] == [decision["record"]]
+    assert run(["git", "rev-parse", "HEAD"], project, env).strip() == harvest_head
+    assert run(["git", "status", "--porcelain"], project, env).strip() == ""
     execution_ids = {"experiment": state["id"]}
     for kind in ("round", "series"):
         flags = [
@@ -396,7 +477,7 @@ def verify_install(artifact, method):
     workers = verify_workers(python, executable, fake, env, project, method)
     print(
         method
-        + ": installed workflows, relocated workers, service entry, and status passed",
+        + ": installed workflows, harvesting, relocated workers, service entry, and status passed",
         flush=True,
     )
     return {

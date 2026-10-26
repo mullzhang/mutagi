@@ -8,7 +8,7 @@ For installing an existing version, follow [installation and updates](../getting
 ## Distribution and source-update verification
 
 Build the wheel and source distribution with `mise run verify`, then run `uv run --locked python scripts/verify_distribution.py`.
-The verifier checks packaged files, installs each artifact in a fresh environment outside the checkout, and exercises execution workflows, worker entry points, status, and the copied example.
+The verifier checks packaged files, installs each artifact in a fresh environment outside the checkout, and exercises execution workflows, harvesting (including packaged prompt generation), worker entry points, status, and the copied example.
 
 The distribution verifier exercises branch refreshes, fixed-tag retention, and explicit changes between version tags using a disposable local Git repository and isolated uv tool directories.
 It checks the installed package version and recorded Git commit after each operation.

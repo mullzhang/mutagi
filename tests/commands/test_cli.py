@@ -29,6 +29,7 @@ def test_cli_forwards_help_and_ships_record_template(tmp_path):
         "series",
         "service",
         "handoff",
+        "harvest",
         "job",
     ):
         # When each subcommand is invoked, then display its own help.

@@ -2,6 +2,7 @@
 
 ## 0.2.0 (unreleased)
 
+- Add `mutagi harvest list`, `show`, `checkout`, `prepare`, and `record` for finding fixed results, preparing trials, printing or saving destination prompts, and versioning selective adoption notes on a separate branch without starting an agent.
 - Fill experiment record identity from saved execution state before prompting the explorer. Validate unique fields in the opening frontmatter and report mismatched values without rewriting the original record.
 - Group documentation by getting started, concepts, guides, reference, and development; separate configuration, service operation, and release procedures from the introductory guides.
 - Organize implementation and tests into commands, project, execution, and runtime packages; separate shared test fixtures and enforce package boundaries.

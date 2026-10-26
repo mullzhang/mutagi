@@ -27,7 +27,7 @@ For a complete project to copy, use the [runnable example](../examples/README.md
 | Allow bounded changes to later rounds or set usage thresholds | [Adaptation and usage](guides/adaptation-and-usage.md) |
 | Assign a series to automatic recovery after restart or login | [macOS service](guides/macos-service.md) |
 | Interpret checkpoints, process observations, and recovery instructions | [Status](guides/status.md) |
-| Try a saved revision and record adoption decisions | [Harvesting](guides/harvesting.md) |
+| Find saved results, prepare trials or prompts, and record adoption decisions | [Harvesting](guides/harvesting.md) |
 | Supervise one external command with a deadline | [Command jobs](guides/command-jobs.md) |
 
 ## Reference

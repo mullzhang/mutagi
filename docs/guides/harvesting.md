@@ -3,12 +3,49 @@
 [Documentation](../README.md) / Guides
 
 **Harvesting** means choosing useful parts of exploration results, such as code, design ideas, or counterexamples, and bringing them into your own work.
-mutagi preserves a catalog, fixed revisions, evidence, and reproduction steps through exploration and integration so people can make that choice.
-There is no command that automatically decides adoption. Apply selected results only after defining the target and scope of the change.
+`mutagi harvest` helps find results, read their fixed records, prepare trials and prompts, and record selective adoption.
+It does not start an agent, change a destination project, or decide adoption.
+Apply selected results after defining the target and scope of the change.
+
+Run the commands from the exploration repository, or use `mutagi harvest --repo /path/to/exploration-project <action>`.
+Reading results and generating prompts require Git and committed project files, but no Codex installation or authentication.
+The committed catalog at `HEAD` supplies the source references; uncommitted catalog edits are left alone.
+Local `.mutagi/runs/` history and an existing exploration worktree are not required.
+Saved Git objects must be available, including after cloning; shallow clones may need the referenced exploration branches fetched.
+
+| Action | Behavior |
+| --- | --- |
+| `list [--search TEXT] [--json]` | List registrations, findings, limitations, and references to harvesting notes |
+| `show UUID [--json]` | Validate the saved observation identity and read its record, changed files, parents, and harvesting notes |
+| `checkout UUID [--json]` | Create or inspect a detached trial at the exact saved revision |
+| `prepare UUID --purpose TEXT` | Print a harvesting prompt to standard output |
+| `record UUID --decision adopt\|defer --note-file FILE` | Append a supplied decision and its evidence to the separate `mutagi/harvests` branch |
 
 ## Choose one result from the catalog
 
-Open the experiment catalog specified by the project's `catalog` setting and look for a question and findings relevant to your interests.
+Search titles, explorer-reported findings, and limitations with a case-insensitive text query:
+
+```bash
+mutagi harvest list
+mutagi harvest list --search "cache"
+```
+
+Search includes `observed`, `refuted`, `unresolved`, and `blocked` results.
+It does not rank scientific validity or infer suitability for a destination.
+The output includes a complete `show` command for each result, so the UUID can be copied without inventing a separate numbering system.
+Use the full lowercase experiment UUIDv4 for all actions.
+In the examples below, set `ID` to a selected experiment's UUID.
+
+```bash
+mutagi harvest show "$ID"
+```
+
+`show` checks the fixed record's identity, base, parents, reported outcome, and implementation ancestry against the catalog.
+The saved observation and its implementation commit are displayed separately.
+Moving the exploration branch later does not change the selected saved revision.
+These structural checks do not independently reproduce observations.
+
+Alternatively, open the experiment catalog specified by the project's `catalog` setting.
 Read its record to understand what was learned, where it applies, which parts are reusable, and what remains unverified.
 Negative results and counterexamples can inform decisions as well as successful implementations.
 You do not need to read every entry.
@@ -19,7 +56,20 @@ Distinguish agent-reported checks, separate reproductions, and human adoption de
 ## Try the saved revision
 
 If a demo exists, run it and compare its conditions with your intended use.
-To try code, read the reproduction steps at the saved commit and record path listed in the catalog.
+To try code, prepare a detached trial worktree:
+
+```bash
+mutagi harvest checkout "$ID"
+```
+
+The worktree is created under `.mutagi/worktrees/harvest-<UUID>/` at the catalog's exact saved commit.
+The output identifies the trial directory and observation record containing reproduction steps.
+The command does not install dependencies, run reproduction commands, or start an agent.
+An existing matching trial is reused with its local changes retained and reported.
+If its revision or repository differs, the command stops without resetting it.
+The project's existing `.mutagi/worktrees/` exclusion must be present and untracked.
+
+Read the reproduction steps at the saved commit and record path listed in the catalog.
 Even if the experiment folder is absent from the shared branch, its saved Git revision remains accessible.
 
 ```bash
@@ -44,9 +94,51 @@ Record which conditions you reproduced and which remain unverified.
 Code and ideas can be selected independently.
 Partial harvesting does not require merging an entire branch or approving the whole experiment.
 
+## Generate a prompt for the destination
+
+Specify the intended use and optionally select files, exact Markdown headings, or a destination directory:
+
+```bash
+mutagi harvest prepare "$ID" \
+  --purpose "Keep the existing API and add the selected search method." \
+  --kind code \
+  --part src/search.py \
+  --target /path/to/application
+```
+
+Replace `src/search.py` with a file that exists at the result's saved revision.
+Use repeated `--part` options for several files or sections.
+For a document section, use `--part 'path/to/note.md#Exact heading text'`.
+The heading must occur exactly once outside fenced code blocks; its subsections are included.
+Without `--part`, the prompt includes the observation record and directs its recipient to choose the relevant parts.
+It does not imply adoption of all changed files.
+
+`--kind` accepts `code` (the default), `idea`, or `counterexample` and changes the requested destination work.
+`--target` identifies an existing directory and is optional; the destination is explicitly marked unspecified when omitted.
+The destination is not modified or analyzed by prompt generation.
+
+Standard output contains only the UTF-8 prompt, with no execution ID or status prefix.
+The prompt contains the purpose, scope, fixed source revisions, reported findings and limitations, original observation record, selected text excerpts, and commands for reading source objects.
+Binary inputs are identified but not embedded as text.
+Source commands require access to the source repository; selected text and the observation record can also be read directly from the prompt.
+The prompt asks its recipient to inspect destination instructions, adapt the selected result, perform appropriate checks, and report what remains unverified.
+
+Create a prompt file with `--output`, or redirect standard output:
+
+```bash
+mutagi harvest prepare "$ID" --purpose "Evaluate this idea for our design." \
+  --kind idea --output /tmp/harvest-prompt.md
+```
+
+The output file must not already exist and its parent directory must exist.
+Generation creates no run state, worktree, harvesting note, or Git commit.
+Save prompts outside the shared working tree when exploration is running, since an uncommitted output file there would prevent the runner's clean-tree checks.
+Give the printed prompt or generated file to the person or agent working in the destination project.
+That separate work performs the actual changes and verification.
+
 ## Record decisions and use
 
-Add a short note to the catalog or a related knowledge note for the selected parts.
+Write a short UTF-8 review note, using the following fields as guidance:
 
 ```text
 Target: experiment ID, saved commit, file or section
@@ -57,6 +149,53 @@ What was tried and its result: state explicitly if not yet tried
 Decision: adopt / defer
 Unverified conditions:
 ```
+
+Then record the decision against the **source experiment UUID**, selecting the specific scope and destination where known:
+
+```bash
+mutagi harvest record "$ID" --decision adopt \
+  --kind code --part src/search.py \
+  --purpose "Add the selected search method while preserving the API." \
+  --target /path/to/application --target-commit HEAD \
+  --verification "Destination unit tests passed; large inputs not tested." \
+  --note-file /tmp/harvest-review.md
+```
+
+`--target-commit` is resolved to a full commit in the supplied destination and requires `--target`.
+It records the associated destination revision; the decision command does not apply changes or verify their equivalence to the source.
+Omit it if no implementation revision is being recorded.
+`--verification` records the supplied report; omitting it leaves verification explicitly unrecorded, even for an `adopt` decision.
+Use `--decision defer` to retain a reason for postponement.
+Use `--note-file -` to read the note from standard input.
+An empty note is rejected.
+
+`record` returns a new note UUID and appends a JSON record to the local `mutagi/harvests` branch.
+It stores the source experiment UUID, fixed saved and implementation revisions, original record path, selected parts, result kind, optional purpose and destination, decision, verification report, and exact note text.
+If no `--part` is supplied, the structured selection remains unspecified; describe its scope in the note.
+The note UUID identifies this decision entry; it does not replace the source experiment UUID in subsequent harvest commands.
+Prompt generation does not allocate a note UUID or retain hidden selection state, so repeat the relevant scope options when recording a decision.
+
+Notes are versioned on an independent branch without changing the current branch, index, original observation, or shared working tree.
+No dedicated notes worktree is required.
+Recording can run while exploration holds its own execution lock.
+Git author identity is required; leave `mutagi/harvests` unchecked out when recording.
+Concurrent note updates use an atomic reference check; a conflicting writer is asked to retry rather than overwriting another note.
+
+`list` and `show` display notes for the same experiment UUID, saved commit, and record path.
+Each note applies to its stated parts and destination; a partial adoption does not mark the entire experiment adopted.
+Notes are appended, so later reconsideration retains earlier reasoning.
+`show` also retains the original catalog decision text; existing free-form notes are not converted into structured decisions or silently reclassified.
+
+The branch is not pushed automatically.
+To share notes, explicitly push `mutagi/harvests`; in another clone, fetch it to the same local branch before reading or extending it:
+
+```bash
+git push origin mutagi/harvests
+git fetch origin mutagi/harvests:mutagi/harvests
+```
+
+Use these commands only when intending to share or retrieve notes.
+If local and remote note histories diverge, reconcile them explicitly before publishing.
 
 Tie the decision to the specific revision and parts reviewed.
 Record any difficulty finding results, missing explanations, or reproduction obstacles you encountered.

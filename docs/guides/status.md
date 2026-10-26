@@ -48,4 +48,5 @@ For `job`, `supervisor_alive` is a live observation in the human display, not a 
 An unassigned service returns `{"phase":"unassigned"}`.
 Scripts written for the earlier JSON-only status output should add `--json`.
 
-See [harvesting](harvesting.md) for inspecting saved implementations and recording adoption decisions.
+Use `mutagi harvest list` to find saved results and `mutagi harvest show <experiment-UUID>` to inspect one result and its separately recorded adoption decisions.
+See [harvesting](harvesting.md) for trials, generated prompts, and decision notes.

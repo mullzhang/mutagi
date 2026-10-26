@@ -14,6 +14,7 @@ COMMANDS = {
     "series": "commands.series",
     "service": "commands.service",
     "handoff": "commands.handoff",
+    "harvest": "commands.harvest",
     "job": "commands.job",
 }
 
@@ -21,7 +22,7 @@ COMMANDS = {
 def main():
     parser = argparse.ArgumentParser(
         prog="mutagi",
-        description="Manage autonomous exploration, preservation, and inheritance",
+        description="Manage exploration, preservation, inheritance, and harvesting",
     )
     parser.add_argument(
         "--version", action="version", version="%(prog)s " + version("mutagi")

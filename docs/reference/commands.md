@@ -20,6 +20,7 @@ Run from the target repository root or supply it through `--repo` where supporte
 | [`mutagi series`](../guides/series.md) | Run multiple rounds within a budget |
 | [`mutagi service`](../guides/macos-service.md) | Manage the macOS supervisor |
 | `mutagi handoff` | Verify App execution results supplied by the controller |
+| [`mutagi harvest`](../guides/harvesting.md) | Search and read saved results, prepare trials or prompts, and record selective adoption |
 | [`mutagi job`](../guides/command-jobs.md) | Manage an external command with a deadline |
 | `mutagi template experiment` | Print the bundled experiment record template |
 | `mutagi --version` | Display the installed package version |

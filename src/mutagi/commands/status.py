@@ -179,7 +179,7 @@ def show_execution(repo, kind, identifier, *, raw=False):
     if kind == "experiment":
         lines.append("Catalog: " + str(repo / state["project"]["catalog"]))
     lines.append(
-        "Human adoption: not tracked by execution; review the catalog and harvesting notes."
+        "Human adoption: not tracked by execution; use mutagi harvest show <experiment-UUID> to review harvesting notes."
     )
     terminal = {
         "experiment": EXPERIMENT_TERMINAL,
@@ -188,7 +188,7 @@ def show_execution(repo, kind, identifier, *, raw=False):
     }[kind]
     if state["phase"] in terminal:
         lines.append(
-            "Next: inspect saved records and knowledge before choosing results to harvest."
+            "Next: use mutagi harvest list to find saved results, then inspect their records and knowledge."
         )
     elif kind == "experiment" and (
         state["phase"] == "awaiting_app" or "app_observation" in state

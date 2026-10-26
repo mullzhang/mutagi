@@ -13,7 +13,12 @@ from pathlib import Path
 from uuid import uuid4
 
 from mutagi.execution.plans import validate_experiment, validate_parent
-from mutagi.execution.records import record_field, record_frontmatter
+from mutagi.execution.records import (
+    OBSERVATION_STATUSES,
+    record_field,
+    record_frontmatter,
+    record_parents,
+)
 from mutagi.execution.state import (
     require_series_owner,
     service_pause_requested,
@@ -41,7 +46,7 @@ SCHEMA = {
     | {
         "status": {
             "type": "string",
-            "enum": ["observed", "refuted", "unresolved", "blocked"],
+            "enum": list(OBSERVATION_STATUSES),
         }
     },
     "required": [
@@ -458,13 +463,7 @@ class Runner:
                     f"expected {expected!r}; found {actual!r}"
                 )
 
-        parents = re.fullmatch(r"\[(.*)\]", record_field(frontmatter, "parent_ids"))
-        if parents is None:
-            raise ValueError("the record requires parent_ids in inline form")
-
-        actual_parents = [
-            p.strip().strip("\"'") for p in parents[1].split(",") if p.strip()
-        ]
+        actual_parents = record_parents(frontmatter)
         if actual_parents != s["parent_ids"]:
             raise ValueError("the record parents differ from the assigned parents")
 

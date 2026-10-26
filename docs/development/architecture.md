@@ -34,6 +34,10 @@ Status and prerequisite commands read these operations without importing control
 `execution/integration.py` contains the existing `Integration(Runner)` specialization for knowledge-only scope and publication of the preserved tree.
 Separating these files does not introduce a new controller hierarchy or alter saved-state fields.
 
+`execution/catalog.py` reads committed registration blocks and validates their immutable observation records.
+`execution/harvest.py` prepares detached trials, selected source excerpts, and packaged harvesting prompts without starting a model.
+`execution/harvest_records.py` stores decision notes on the independent `mutagi/harvests` branch using Git objects and an atomic reference update, without acquiring the execution lock or changing a working tree or index.
+
 The execution layer does not import command presentation.
 Two internal workers parse their recorded directory arguments when started in subprocesses:
 

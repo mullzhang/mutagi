@@ -40,6 +40,8 @@ Preparation is included in the time allocation; preservation has a three-minute 
 Stop grace and preservation work can extend the wall-clock finish time.
 
 Read `experiments/INDEX.md` after registration. It links each saved revision and record path; the implementation and record remain on that exploration's branch.
+Use `mutagi harvest list` and `mutagi harvest show <experiment-UUID>` to inspect these results.
+`mutagi harvest checkout <experiment-UUID>` prepares a trial, and `mutagi harvest prepare <experiment-UUID> --purpose TEXT` prints a prompt for using the result in another project.
 Use the `git show <saved-commit>:<record-path>` command recorded in the catalog to read the result.
 Check the inputs, observed implementation revision, limitations, and reproduction commands before deciding what to adopt.
 For interrupted work, use `mutagi experiment status <UUID>` and `mutagi experiment resume <UUID>`.
