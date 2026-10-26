@@ -41,9 +41,9 @@ These commands require access to the source repository's Git objects. Selected t
 Title: {source[title]}
 Reported observation: {source[status]}
 Exit reason: {source[exit_reason]}
-Findings reported by the explorer: {source[summary]}
+Findings recorded in the catalog: {source[summary]}
 Limitations: {source[limits]}
-Checks reported by the explorer: {source[checks]}
+Checks reported by the {source[checks_actor]}: {source[checks]}
 
 These are source reports. This prompt generation has not reproduced the result, tested the destination, or made an adoption decision.
 

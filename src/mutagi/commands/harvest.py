@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import shlex
+import sys
 from pathlib import Path
 
 from mutagi.commands.inputs import read_text
@@ -37,6 +38,14 @@ def selection_arguments(parser):
 
 def next_command(repo, action, identifier):
     return shlex.join(["mutagi", "harvest", "--repo", str(repo), action, identifier])
+
+
+def report_catalog_scope(source):
+    if source["catalog_has_unmarked_references"]:
+        print(
+            "Note: the catalog also contains unmarked historical saved-record references. Harvest indexes marked forest-run and forest-experiment registrations only; inspect the original catalog for those older records.",
+            file=sys.stderr,
+        )
 
 
 def show_note(record):
@@ -119,6 +128,8 @@ def main():
 
     if args.action == "list":
         entries = catalog_entries(repo)
+        if entries:
+            report_catalog_scope(entries[0])
         records = read_records(repo)
         if args.search is not None:
             search = harvest.nonempty(args.search, "search text").casefold()
@@ -155,6 +166,7 @@ def main():
         return
 
     source = read_experiment(repo, args.id)
+    report_catalog_scope(source)
     if args.action == "show":
         records = decisions_for(read_records(repo), source)
         if args.json:
@@ -171,7 +183,7 @@ def main():
             f"Reported observation: {source['status']}; exit: {source['exit_reason']}"
         )
         print("Findings: " + source["summary"] + "\nLimitations: " + source["limits"])
-        print("Checks reported by the explorer: " + source["checks"])
+        print(f"Checks reported by the {source['checks_actor']}: " + source["checks"])
         print("Saved revision: " + source["saved_commit"])
         print(
             "Observed implementation: "

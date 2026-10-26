@@ -67,6 +67,24 @@ def test_show_reads_saved_record_when_the_shared_tree_has_other_changes(
     assert snapshot(repo) == before
 
 
+def test_unmarked_historical_references_are_reported_without_polluting_json(
+    repo, preserved_experiment, monkeypatch, capsys
+):
+    path = repo / "experiments/INDEX.md"
+    path.write_text(
+        "```bash\ngit show aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:experiments/older/README.md\n```\n\n"
+        + path.read_text()
+    )
+    git(repo, "add", str(path))
+    git(repo, "commit", "-m", "test: retain a historical saved-record reference")
+    invoke(monkeypatch, repo, "list", "--json")
+    output = capsys.readouterr()
+    (entry,) = json.loads(output.out)
+    assert entry["id"] == preserved_experiment["id"]
+    assert entry["catalog_has_unmarked_references"]
+    assert "unmarked historical saved-record references" in output.err
+
+
 def test_show_preserves_existing_free_form_catalog_decisions(
     repo, preserved_experiment, monkeypatch, capsys
 ):

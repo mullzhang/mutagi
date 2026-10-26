@@ -21,6 +21,27 @@ Saved Git objects must be available, including after cloning; shallow clones may
 | `prepare UUID --purpose TEXT` | Print a harvesting prompt to standard output |
 | `record UUID --decision adopt\|defer --note-file FILE` | Append a supplied decision and its evidence to the separate `mutagi/harvests` branch |
 
+## Supported catalog registrations
+
+The catalog is a human-readable document. Its metadata contract requires experiment IDs, parents, findings, limitations, saved revisions, and fixed record entry points; it does not require English prose throughout the document.
+The reader intentionally supports the registration layouts already produced or preserved by mutagi projects:
+
+- `<!-- forest-run:UUID -->` identifies a controller registration. Both the generated English `Field | Value` table and the existing Japanese `項目 | 内容` table are supported, with their explicit field labels and separators.
+- `<!-- forest-experiment:UUID -->` identifies the existing naedo-forest App registrations. Their three identity layouts use `実験IDと形式`, `ID、開始UTC、親`, or `ID、開始UTC`, with the corresponding explicit parent, base, implementation, saved revision, outcome, verification, and adoption statements.
+
+These layouts are covered by [verbatim committed catalog excerpts](../../tests/fixtures/catalogs/naedo-forest.md), including their source revision.
+No saved data or historical adoption decision needs rewriting to use these supported layouts.
+Explorer checks and controller reproduction reports retain their respective actors.
+
+Each marked registration must have its own heading, table, required nonempty fields, and exactly one fenced `git show <full-saved-commit>:<record-path>` command matching its saved revision.
+Missing, duplicate, malformed, inconsistent, or unsupported marked metadata is an error; the reader does not borrow values from the next registration or an integration assessment.
+`show` additionally validates the saved observation's metadata and implementation ancestry, including an implementation revision explicitly declared by an App registration.
+
+Older unmarked narratives and saved-record references are not machine registrations.
+When these precede marked registrations, the CLI reports their presence on standard error and JSON entries carry `catalog_has_unmarked_references: true`; inspect the original catalog for those older results.
+A catalog containing only unmarked saved-record references produces an explicit error rather than an apparently successful empty list.
+Registering such historical material would require an explicit, reviewed metadata migration; unknown start times or revisions must not be invented.
+
 ## Choose one result from the catalog
 
 Search titles, explorer-reported findings, and limitations with a case-insensitive text query:
